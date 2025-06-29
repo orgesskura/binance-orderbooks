@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use arrayvec::ArrayVec;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -37,7 +37,7 @@ impl Price {
     // Conservative safe limit to prevent overflow: ~92 billion
     const MAX_SAFE_PRICE: f64 = 90_000_000_000.0;
     const MIN_SAFE_PRICE: f64 = 0.0;
-    
+
     #[inline]
     pub fn from_f64(price: f64) -> Result<Self, OrderBookError> {
         // Fast path for common values (most crypto/stock prices under $1M)
@@ -46,138 +46,62 @@ impl Price {
             let rounded = scaled.round();
             return Ok(Price(rounded as i64));
         }
-        
+
         // Careful path for edge cases and large values
         Self::from_f64_safe(price)
     }
-    
+
     fn from_f64_safe(price: f64) -> Result<Self, OrderBookError> {
         // Check for NaN and infinity
         if !price.is_finite() {
-            return Err(OrderBookError::InvalidPrice(
-                format!("Price must be finite, got: {}", price)
-            ));
+            return Err(OrderBookError::InvalidPrice(format!(
+                "Price must be finite, got: {}",
+                price
+            )));
         }
-        
+
         // Check for negative prices
         if price < Self::MIN_SAFE_PRICE {
-            return Err(OrderBookError::InvalidPrice(
-                format!("Price cannot be negative, got: {}", price)
-            ));
+            return Err(OrderBookError::InvalidPrice(format!(
+                "Price cannot be negative, got: {}",
+                price
+            )));
         }
-        
+
         // Check bounds to prevent overflow
         if price > Self::MAX_SAFE_PRICE {
-            return Err(OrderBookError::Overflow(
-                format!("Price {} exceeds maximum safe value {}", 
-                       price, Self::MAX_SAFE_PRICE)
-            ));
+            return Err(OrderBookError::Overflow(format!(
+                "Price {} exceeds maximum safe value {}",
+                price,
+                Self::MAX_SAFE_PRICE
+            )));
         }
-        
+
         // Safe conversion with additional overflow check
         let scaled = price * Self::MULTIPLIER as f64;
         let rounded = scaled.round();
-        
+
         // Final safety check before casting
         if rounded > i64::MAX as f64 || rounded < i64::MIN as f64 {
-            return Err(OrderBookError::Overflow(
-                format!("Price conversion overflow: {}", price)
-            ));
+            return Err(OrderBookError::Overflow(format!(
+                "Price conversion overflow: {}",
+                price
+            )));
         }
-        
+
         Ok(Price(rounded as i64))
     }
-    
+
     #[inline(always)]
     pub fn to_f64(self) -> f64 {
         self.0 as f64 / Self::MULTIPLIER as f64
     }
-    
-    // Safe string parsing with overflow protection
-    pub fn from_str_fast(s: &str) -> Result<Self, OrderBookError> {
-        if s.is_empty() {
-            return Err(OrderBookError::InvalidPrice("Empty price string".to_string()));
-        }
-        
-        let bytes = s.as_bytes();
-        let (sign, bytes) = match bytes[0] {
-            b'-' => return Err(OrderBookError::InvalidPrice("Negative prices not allowed".to_string())),
-            b'+' => (1, &bytes[1..]),
-            _ => (1, bytes),
-        };
-        
-        if bytes.is_empty() {
-            return Err(OrderBookError::InvalidPrice("Invalid price format".to_string()));
-        }
-        
-        let mut result = 0i64;
-        let mut decimal_places = 0;
-        let mut found_decimal = false;
-        
-        // Track magnitude to prevent overflow during parsing
-        let mut magnitude_check = 0u64;
-        
-        for &byte in bytes {
-            match byte {
-                b'0'..=b'9' => {
-                    let digit = (byte - b'0') as i64;
-                    
-                    // Check for overflow during parsing
-                    if result > (i64::MAX - digit) / 10 {
-                        return Err(OrderBookError::Overflow(
-                            format!("Price string '{}' causes overflow during parsing", s)
-                        ));
-                    }
-                    
-                    if found_decimal {
-                        decimal_places += 1;
-                        if decimal_places > 8 {
-                            break; // Ignore extra precision
-                        }
-                    }
-                    
-                    result = result * 10 + digit;
-                    magnitude_check = magnitude_check.saturating_mul(10).saturating_add(digit as u64);
-                    
-                    // Early overflow detection
-                    if magnitude_check > Self::MAX_SAFE_PRICE as u64 * 100_000_000 {
-                        return Err(OrderBookError::Overflow(
-                            format!("Price string '{}' represents too large a value", s)
-                        ));
-                    }
-                }
-                b'.' => {
-                    if found_decimal {
-                        return Err(OrderBookError::InvalidPrice("Multiple decimal points".to_string()));
-                    }
-                    found_decimal = true;
-                }
-                _ => return Err(OrderBookError::InvalidPrice("Invalid character in price".to_string())),
-            }
-        }
-        
-        // Adjust for decimal places (pad with zeros to reach 8 decimal places)
-        for _ in decimal_places..8 {
-            if result > i64::MAX / 10 {
-                return Err(OrderBookError::Overflow(
-                    format!("Price string '{}' causes overflow during scaling", s)
-                ));
-            }
-            result *= 10;
-        }
-        
-        if result <= 0 {
-            return Err(OrderBookError::InvalidPrice("Price must be positive".to_string()));
-        }
-        
-        Ok(Price(result * sign))
-    }
-    
+
     // Utility methods for checking limits
     pub fn max_safe_value() -> f64 {
         Self::MAX_SAFE_PRICE
     }
-    
+
     pub fn min_safe_value() -> f64 {
         Self::MIN_SAFE_PRICE
     }
@@ -189,36 +113,42 @@ pub struct Quantity(f64);
 
 impl Quantity {
     const MAX_SAFE_QUANTITY: f64 = 1e15; // 1 quadrillion (reasonable limit)
-    
+
     #[inline(always)]
     pub fn from_f64(qty: f64) -> Result<Self, OrderBookError> {
         if !qty.is_finite() {
-            return Err(OrderBookError::InvalidQuantity("Quantity must be finite".to_string()));
-        }
-        
-        if qty < 0.0 {
-            return Err(OrderBookError::InvalidQuantity("Quantity cannot be negative".to_string()));
-        }
-        
-        if qty > Self::MAX_SAFE_QUANTITY {
-            return Err(OrderBookError::Overflow(
-                format!("Quantity {} exceeds maximum safe value {}", qty, Self::MAX_SAFE_QUANTITY)
+            return Err(OrderBookError::InvalidQuantity(
+                "Quantity must be finite".to_string(),
             ));
         }
-        
+
+        if qty < 0.0 {
+            return Err(OrderBookError::InvalidQuantity(
+                "Quantity cannot be negative".to_string(),
+            ));
+        }
+
+        if qty > Self::MAX_SAFE_QUANTITY {
+            return Err(OrderBookError::Overflow(format!(
+                "Quantity {} exceeds maximum safe value {}",
+                qty,
+                Self::MAX_SAFE_QUANTITY
+            )));
+        }
+
         Ok(Quantity(qty))
     }
-    
+
     #[inline(always)]
     pub fn to_f64(self) -> f64 {
         self.0
     }
-    
+
     #[inline(always)]
     pub fn is_zero(self) -> bool {
         self.0 == 0.0
     }
-    
+
     // Fast quantity parsing with overflow protection
     pub fn from_str_fast(s: &str) -> Result<Self, OrderBookError> {
         // Optimize for common single-digit cases first
@@ -231,11 +161,12 @@ impl Quantity {
             }
             _ => {}
         }
-        
+
         // Parse and validate
-        let qty = s.parse::<f64>()
-            .map_err(|_| OrderBookError::InvalidQuantity(format!("Cannot parse quantity: {}", s)))?;
-        
+        let qty = s.parse::<f64>().map_err(|_| {
+            OrderBookError::InvalidQuantity(format!("Cannot parse quantity: {}", s))
+        })?;
+
         Self::from_f64(qty)
     }
 }
@@ -250,14 +181,18 @@ pub struct PriceLevel {
 // Book Ticker Update with overflow protection
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BookTickerUpdate {
-    pub u: u64,        // order book updateId
-    pub s: String,     // symbol
-    pub b: String,     // best bid price
+    #[serde(rename = "s")]
+    pub update_id: u64,
+    #[serde(rename = "s")]
+    pub symbol: String,
+    #[serde(rename = "b")]
+    pub bid_price: f64,
     #[serde(rename = "B")]
-    pub bid_qty: String, // best bid qty
-    pub a: String,     // best ask price
+    pub bid_qty: f64,
+    #[serde(rename = "a")]
+    pub ask_price: f64,
     #[serde(rename = "A")]
-    pub ask_qty: String, // best ask qty
+    pub ask_qty: f64,
 }
 
 impl BookTickerUpdate {
@@ -269,25 +204,29 @@ impl BookTickerUpdate {
     // Safe parsing with overflow protection
     #[inline]
     pub fn parse_best_bid(&self) -> Result<(Price, Quantity), OrderBookError> {
-        let price = Price::from_str_fast(&self.b)?;
-        let qty = Quantity::from_str_fast(&self.bid_qty)?;
-        
+        let price = Price::from_f64(self.bid_price)?;
+        let qty = Quantity::from_f64(self.bid_qty)?;
+
         if price.0 <= 0 || qty.0 <= 0.0 {
-            return Err(OrderBookError::InvalidPrice("Price and quantity must be positive".to_string()));
+            return Err(OrderBookError::InvalidPrice(
+                "Price and quantity must be positive".to_string(),
+            ));
         }
-        
+
         Ok((price, qty))
     }
 
     #[inline]
     pub fn parse_best_ask(&self) -> Result<(Price, Quantity), OrderBookError> {
-        let price = Price::from_str_fast(&self.a)?;
-        let qty = Quantity::from_str_fast(&self.ask_qty)?;
-        
+        let price = Price::from_f64(self.ask_price)?;
+        let qty = Quantity::from_f64(self.ask_qty)?;
+
         if price.0 <= 0 || qty.0 <= 0.0 {
-            return Err(OrderBookError::InvalidPrice("Price and quantity must be positive".to_string()));
+            return Err(OrderBookError::InvalidPrice(
+                "Price and quantity must be positive".to_string(),
+            ));
         }
-        
+
         Ok((price, qty))
     }
 }
@@ -297,8 +236,8 @@ impl BookTickerUpdate {
 pub struct DepthUpdate {
     #[serde(rename = "lastUpdateId")]
     pub last_update_id: u64,
-    pub bids: ArrayVec<[String; 2], 20>, // Fixed-size array for exactly ≤20 levels
-    pub asks: ArrayVec<[String; 2], 20>, // Fixed-size array for exactly ≤20 levels
+    pub bids: ArrayVec<[f64; 2], 20>, // Fixed-size array for exactly ≤20 levels
+    pub asks: ArrayVec<[f64; 2], 20>, // Fixed-size array for exactly ≤20 levels
 }
 
 impl DepthUpdate {
@@ -310,41 +249,35 @@ impl DepthUpdate {
     // Batch parsing with compile-time capacity guarantees
     pub fn parse_bids(&self) -> Result<ArrayVec<(Price, Quantity), 20>, OrderBookError> {
         let mut results = ArrayVec::new();
-        
+
         for level in &self.bids {
-            let price = Price::from_str_fast(&level[0])?;
-            let qty = Quantity::from_str_fast(&level[1])?;
-            
+            let price = Price::from_f64(level[0])?;
+            let qty = Quantity::from_f64(level[1])?;
+
             if price.0 <= 0 || qty.0 < 0.0 {
-                return Err(OrderBookError::InvalidPrice("Price must be positive, quantity must be non-negative".to_string()));
+                return Err(OrderBookError::InvalidPrice(
+                    "Price must be positive, quantity must be non-negative".to_string(),
+                ));
             }
-            
-            // ArrayVec::push returns Result, handle capacity overflow
-            results.try_push((price, qty)).map_err(|_| {
-                OrderBookError::Overflow(format!("Too many bid levels: maximum 20 allowed"))
-            })?;
         }
-        
+
         Ok(results)
     }
 
     pub fn parse_asks(&self) -> Result<ArrayVec<(Price, Quantity), 20>, OrderBookError> {
         let mut results = ArrayVec::new();
-        
+
         for level in &self.asks {
-            let price = Price::from_str_fast(&level[0])?;
-            let qty = Quantity::from_str_fast(&level[1])?;
-            
+            let price = Price::from_f64(level[0])?;
+            let qty = Quantity::from_f64(level[1])?;
+
             if price.0 <= 0 || qty.0 < 0.0 {
-                return Err(OrderBookError::InvalidPrice("Price must be positive, quantity must be non-negative".to_string()));
+                return Err(OrderBookError::InvalidPrice(
+                    "Price must be positive, quantity must be non-negative".to_string(),
+                ));
             }
-            
-            // ArrayVec::push returns Result, handle capacity overflow
-            results.try_push((price, qty)).map_err(|_| {
-                OrderBookError::Overflow(format!("Too many ask levels: maximum 20 allowed"))
-            })?;
         }
-        
+
         Ok(results)
     }
 }
@@ -357,7 +290,7 @@ pub struct OrderBook {
     bids: BTreeMap<Price, Quantity>, // Reverse order iteration for best bid
     asks: BTreeMap<Price, Quantity>, // Forward order iteration for best ask
     last_update_id: u64,
-    
+
     // Cached best levels for O(1) access - using Option<PriceLevel> for cache efficiency
     best_bid: Option<PriceLevel>,
     best_ask: Option<PriceLevel>,
@@ -366,9 +299,11 @@ pub struct OrderBook {
 impl OrderBook {
     pub fn new(symbol: String) -> Result<OrderBook, OrderBookError> {
         if symbol.is_empty() {
-            return Err(OrderBookError::InvalidSymbol("Symbol cannot be empty".to_string()));
+            return Err(OrderBookError::InvalidSymbol(
+                "Symbol cannot be empty".to_string(),
+            ));
         }
-        
+
         Ok(OrderBook {
             symbol,
             bids: BTreeMap::new(),
@@ -382,11 +317,12 @@ impl OrderBook {
     // Hot path: optimized for frequent calls with overflow protection
     #[inline]
     pub fn update_book_ticker(&mut self, data: &BookTickerUpdate) -> Result<(), OrderBookError> {
-        // Early return for symbol mismatch - avoid any parsing overhead
-        if data.s != self.symbol {
-            return Err(OrderBookError::InvalidSymbol(
-                format!("Symbol mismatch: expected {}, got {}", self.symbol, data.s)
-            ));
+        // Early return for symbol mismatch
+        if data.symbol != self.symbol {
+            return Err(OrderBookError::InvalidSymbol(format!(
+                "Symbol mismatch: expected {}, got {}",
+                self.symbol, data.symbol
+            )));
         }
 
         // Parse both bid and ask, early return on any error (including overflow)
@@ -408,7 +344,7 @@ impl OrderBook {
 
         // Update cache once at the end
         self.update_best_cache_fast();
-        self.last_update_id = data.u;
+        self.last_update_id = data.update_id;
 
         Ok(())
     }
@@ -450,12 +386,20 @@ impl OrderBook {
     #[inline]
     fn update_best_cache_fast(&mut self) {
         // Best bid = highest price (last in iteration order)
-        self.best_bid = self.bids.iter().next_back()
-            .map(|(&price, &qty)| PriceLevel { price, quantity: qty });
+        self.best_bid = self
+            .bids
+            .iter()
+            .next_back()
+            .map(|(&price, &qty)| PriceLevel {
+                price,
+                quantity: qty,
+            });
 
-        // Best ask = lowest price (first in iteration order)  
-        self.best_ask = self.asks.iter().next()
-            .map(|(&price, &qty)| PriceLevel { price, quantity: qty });
+        // Best ask = lowest price (first in iteration order)
+        self.best_ask = self.asks.iter().next().map(|(&price, &qty)| PriceLevel {
+            price,
+            quantity: qty,
+        });
     }
 
     // O(1) best bid/ask retrieval from cache
@@ -464,7 +408,7 @@ impl OrderBook {
         match (self.best_bid, self.best_ask) {
             (Some(bid), Some(ask)) => Some((
                 (bid.price.to_f64(), bid.quantity.to_f64()),
-                (ask.price.to_f64(), ask.quantity.to_f64())
+                (ask.price.to_f64(), ask.quantity.to_f64()),
             )),
             _ => None,
         }
@@ -491,30 +435,30 @@ impl OrderBook {
     // Optimized string formatting with minimal allocation
     pub fn to_string(&self) -> String {
         let (bids, asks) = self.get_levels(20);
-        
+
         // Pre-calculate string capacity to avoid reallocation
         let estimated_size = bids.len().max(asks.len()) * 80; // ~80 chars per line
         let mut result = String::with_capacity(estimated_size);
-        
+
         let max_levels = bids.len().max(asks.len());
-        
+
         for i in 0..max_levels {
             result.push_str(&format!("[{:2}] ", i + 1));
-            
+
             if i < bids.len() {
                 result.push_str(&format!("[ {:.5} ] {:>9.3}", bids[i].1, bids[i].0));
             } else {
                 result.push_str(&format!("[ {:>7} ] {:>9}", "", ""));
             }
-            
+
             result.push_str(" | ");
-            
+
             if i < asks.len() {
                 result.push_str(&format!("{:>9.3} [ {:.5} ]", asks[i].0, asks[i].1));
             } else {
                 result.push_str(&format!("{:>9} [ {:>7} ]", "", ""));
             }
-            
+
             result.push('\n');
         }
 
@@ -523,13 +467,19 @@ impl OrderBook {
 
     // Performance monitoring helpers
     #[inline(always)]
-    pub fn bid_count(&self) -> usize { self.bids.len() }
-    
+    pub fn bid_count(&self) -> usize {
+        self.bids.len()
+    }
+
     #[inline(always)]
-    pub fn ask_count(&self) -> usize { self.asks.len() }
-    
+    pub fn ask_count(&self) -> usize {
+        self.asks.len()
+    }
+
     #[inline(always)]
-    pub fn last_update_id(&self) -> u64 { self.last_update_id }
+    pub fn last_update_id(&self) -> u64 {
+        self.last_update_id
+    }
 }
 
 #[cfg(test)]
@@ -540,17 +490,17 @@ mod tests {
     fn test_price_fixed_point_conversion() {
         let price = Price::from_f64(25.35190000).unwrap();
         assert_eq!(price.to_f64(), 25.3519);
-        
-        let price2 = Price::from_str_fast("25.35190000").unwrap();
+
+        let price2 = Price::from_f64(25.35190000).unwrap();
         assert_eq!(price2, price);
     }
 
     #[test]
     fn test_fast_quantity_parsing() {
-        let qty = Quantity::from_str_fast("5").unwrap();
+        let qty = Quantity::from_f64(5.0).unwrap();
         assert_eq!(qty.to_f64(), 5.0);
-        
-        let qty2 = Quantity::from_str_fast("31.21000000").unwrap();
+
+        let qty2 = Quantity::from_f64(31.21000000).unwrap();
         assert_eq!(qty2.to_f64(), 31.21);
     }
 
@@ -562,27 +512,27 @@ mod tests {
         assert!(Price::from_f64(f64::INFINITY).is_err());
         assert!(Price::from_f64(f64::NAN).is_err());
         assert!(Price::from_f64(-1.0).is_err());
-        
+
         // Test quantity overflow
         assert!(Quantity::from_f64(f64::MAX).is_err());
         assert!(Quantity::from_f64(f64::INFINITY).is_err());
         assert!(Quantity::from_f64(-1.0).is_err());
-        
+
         // Boundary cases
         assert!(Price::from_f64(90_000_000_001.0).is_err()); // Just over limit
-        assert!(Price::from_f64(89_999_999_999.0).is_ok());  // Just under limit
+        assert!(Price::from_f64(89_999_999_999.0).is_ok()); // Just under limit
     }
 
     #[test]
     fn test_string_overflow_protection() {
         // Test string parsing overflow
-        assert!(Price::from_str_fast("99999999999999999999").is_err());
-        assert!(Price::from_str_fast("1e50").is_err());
-        assert!(Quantity::from_str_fast("1e50").is_err());
-        
+        assert!(Price::from_f64(99999999999999999999.0).is_err());
+        assert!(Price::from_f64(1e50).is_err());
+        assert!(Quantity::from_f64(1e50).is_err());
+
         // Valid large values should work
-        assert!(Price::from_str_fast("1000000.12345678").is_ok());
-        assert!(Quantity::from_str_fast("1000000.123").is_ok());
+        assert!(Price::from_f64(1000000.12345678).is_ok());
+        assert!(Quantity::from_f64(1000000.123).is_ok());
     }
 
     #[test]
@@ -598,12 +548,12 @@ mod tests {
         }"#;
 
         let update = BookTickerUpdate::from_json(json).unwrap();
-        assert_eq!(update.u, 400900217);
-        assert_eq!(update.s, "BNBUSDT");
-        
+        assert_eq!(update.update_id, 400900217);
+        assert_eq!(update.symbol, "BNBUSDT");
+
         let (bid_price, bid_qty) = update.parse_best_bid().unwrap();
         let (ask_price, ask_qty) = update.parse_best_ask().unwrap();
-        
+
         assert_eq!(bid_price.to_f64(), 25.3519);
         assert_eq!(bid_qty.to_f64(), 31.21);
         assert_eq!(ask_price.to_f64(), 25.3652);
@@ -641,10 +591,10 @@ mod tests {
 
         let update = DepthUpdate::from_json(json).unwrap();
         assert_eq!(update.last_update_id, 160);
-        
+
         let bids = update.parse_bids().unwrap();
         let asks = update.parse_asks().unwrap();
-        
+
         assert_eq!(bids[0].0.to_f64(), 0.0024);
         assert_eq!(bids[0].1.to_f64(), 10.0);
         assert_eq!(asks[0].0.to_f64(), 0.0026);
@@ -661,37 +611,41 @@ mod tests {
     #[test]
     fn test_high_performance_book_ticker_update() {
         let mut book = OrderBook::new("BNBUSDT".to_string()).unwrap();
-        
+
         let update = BookTickerUpdate {
-            u: 400900217,
-            s: "BNBUSDT".to_string(),
-            b: "25.35190000".to_string(),
-            bid_qty: "31.21000000".to_string(),
-            a: "25.36520000".to_string(),
-            ask_qty: "40.66000000".to_string(),
+            update_id: 400900217,
+            symbol: "BNBUSDT".to_string(),
+            bid_price: 25.35190000,
+            bid_qty: 31.21000000,
+            ask_price: 25.36520000,
+            ask_qty: 40.66000000,
         };
 
         book.update_book_ticker(&update).unwrap();
-        
+
         let best = book.get_best_bid_ask().unwrap();
-        assert!((best.0.0 - 25.3519).abs() < 1e-6);
-        assert!((best.0.1 - 31.21).abs() < 1e-6);
-        assert!((best.1.0 - 25.3652).abs() < 1e-6);
-        assert!((best.1.1 - 40.66).abs() < 1e-6);
+        assert!((best.0 .0 - 25.3519).abs() < 1e-6);
+        assert!((best.0 .1 - 31.21).abs() < 1e-6);
+        assert!((best.1 .0 - 25.3652).abs() < 1e-6);
+        assert!((best.1 .1 - 40.66).abs() < 1e-6);
     }
 
     #[test]
     fn test_batch_depth_update() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         let mut bids = ArrayVec::new();
-        bids.try_push(["50000.0".to_string(), "1.0".to_string()]).unwrap();
-        bids.try_push(["49999.0".to_string(), "2.0".to_string()]).unwrap();
-        
+        bids.try_push(["50000.0".to_string(), "1.0".to_string()])
+            .unwrap();
+        bids.try_push(["49999.0".to_string(), "2.0".to_string()])
+            .unwrap();
+
         let mut asks = ArrayVec::new();
-        asks.try_push(["50001.0".to_string(), "1.5".to_string()]).unwrap();
-        asks.try_push(["50002.0".to_string(), "2.5".to_string()]).unwrap();
-        
+        asks.try_push(["50001.0".to_string(), "1.5".to_string()])
+            .unwrap();
+        asks.try_push(["50002.0".to_string(), "2.5".to_string()])
+            .unwrap();
+
         let update = DepthUpdate {
             last_update_id: 160,
             bids,
@@ -699,7 +653,7 @@ mod tests {
         };
 
         book.update_depth(&update).unwrap();
-        
+
         let best = book.get_best_bid_ask().unwrap();
         assert_eq!(best.0, (50000.0, 1.0));
         assert_eq!(best.1, (50001.0, 1.5));
@@ -710,13 +664,17 @@ mod tests {
     #[test]
     fn test_zero_quantity_removal() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         // Add initial levels
         let mut bids1 = ArrayVec::new();
-        bids1.try_push(["50000.0".to_string(), "1.0".to_string()]).unwrap();
+        bids1
+            .try_push(["50000.0".to_string(), "1.0".to_string()])
+            .unwrap();
         let mut asks1 = ArrayVec::new();
-        asks1.try_push(["50001.0".to_string(), "1.0".to_string()]).unwrap();
-        
+        asks1
+            .try_push(["50001.0".to_string(), "1.0".to_string()])
+            .unwrap();
+
         let update1 = DepthUpdate {
             last_update_id: 1,
             bids: bids1,
@@ -724,13 +682,17 @@ mod tests {
         };
         book.update_depth(&update1).unwrap();
         assert!(book.get_best_bid_ask().is_some());
-        
+
         // Remove with zero quantity
         let mut bids2 = ArrayVec::new();
-        bids2.try_push(["50000.0".to_string(), "0.0".to_string()]).unwrap();
+        bids2
+            .try_push(["50000.0".to_string(), "0.0".to_string()])
+            .unwrap();
         let mut asks2 = ArrayVec::new();
-        asks2.try_push(["50001.0".to_string(), "0.0".to_string()]).unwrap();
-        
+        asks2
+            .try_push(["50001.0".to_string(), "0.0".to_string()])
+            .unwrap();
+
         let update2 = DepthUpdate {
             last_update_id: 2,
             bids: bids2,
@@ -745,7 +707,7 @@ mod tests {
         let price1 = Price::from_str_fast("50000.12345678").unwrap();
         let price2 = Price::from_str_fast("50000.12345679").unwrap();
         assert!(price2 > price1);
-        
+
         let price3 = Price::from_f64(50000.12345678).unwrap();
         assert_eq!(price1, price3);
     }
@@ -753,7 +715,7 @@ mod tests {
     #[test]
     fn test_invalid_symbol_error() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         let update = BookTickerUpdate {
             u: 1,
             s: "ETHUSDT".to_string(), // Wrong symbol
@@ -765,7 +727,10 @@ mod tests {
 
         let result = book.update_book_ticker(&update);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), OrderBookError::InvalidSymbol(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            OrderBookError::InvalidSymbol(_)
+        ));
     }
 
     #[test]
@@ -783,21 +748,28 @@ mod tests {
         let update = BookTickerUpdate::from_json(json).unwrap();
         let result = update.parse_best_bid();
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), OrderBookError::InvalidPrice(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            OrderBookError::InvalidPrice(_)
+        ));
     }
 
     #[test]
     fn test_orderbook_formatting() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         let mut bids = ArrayVec::new();
-        bids.try_push(["50000.0".to_string(), "1.0".to_string()]).unwrap();
-        bids.try_push(["49999.0".to_string(), "2.0".to_string()]).unwrap();
-        
+        bids.try_push(["50000.0".to_string(), "1.0".to_string()])
+            .unwrap();
+        bids.try_push(["49999.0".to_string(), "2.0".to_string()])
+            .unwrap();
+
         let mut asks = ArrayVec::new();
-        asks.try_push(["50001.0".to_string(), "1.5".to_string()]).unwrap();
-        asks.try_push(["50002.0".to_string(), "2.5".to_string()]).unwrap();
-        
+        asks.try_push(["50001.0".to_string(), "1.5".to_string()])
+            .unwrap();
+        asks.try_push(["50002.0".to_string(), "2.5".to_string()])
+            .unwrap();
+
         let update = DepthUpdate {
             last_update_id: 1,
             bids,
@@ -806,7 +778,7 @@ mod tests {
 
         book.update_depth(&update).unwrap();
         let formatted = book.to_string();
-        
+
         // Check that the output contains expected elements
         assert!(formatted.contains("50000.000"));
         assert!(formatted.contains("50001.000"));
@@ -818,10 +790,10 @@ mod tests {
     fn test_edge_values() {
         // Test smallest representable value
         assert!(Price::from_f64(0.00000001).is_ok());
-        
+
         // Test zero
         assert!(Price::from_f64(0.0).is_ok());
-        
+
         // Test safe large values
         assert!(Price::from_f64(1_000_000.0).is_ok());
         assert!(Price::from_f64(10_000_000.0).is_ok());
@@ -843,29 +815,33 @@ mod performance_tests {
     #[test]
     fn test_bulk_updates_performance() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         // Simulate high-frequency updates
         for i in 0..1000 {
             let mut bids = ArrayVec::new();
-            bids.try_push([format!("{}.0", 50000 - i), "1.0".to_string()]).unwrap();
-            bids.try_push([format!("{}.5", 50000 - i), "2.0".to_string()]).unwrap();
-            
+            bids.try_push([format!("{}.0", 50000 - i), "1.0".to_string()])
+                .unwrap();
+            bids.try_push([format!("{}.5", 50000 - i), "2.0".to_string()])
+                .unwrap();
+
             let mut asks = ArrayVec::new();
-            asks.try_push([format!("{}.0", 50001 + i), "1.5".to_string()]).unwrap();
-            asks.try_push([format!("{}.5", 50001 + i), "2.5".to_string()]).unwrap();
-            
+            asks.try_push([format!("{}.0", 50001 + i), "1.5".to_string()])
+                .unwrap();
+            asks.try_push([format!("{}.5", 50001 + i), "2.5".to_string()])
+                .unwrap();
+
             let update = DepthUpdate {
                 last_update_id: i,
                 bids,
                 asks,
             };
-            
+
             book.update_depth(&update).unwrap();
-            
+
             // Verify we can still access best levels efficiently
             assert!(book.get_best_bid_ask().is_some());
         }
-        
+
         // Verify final state
         assert!(book.bid_count() <= 2000); // Some may have been overwritten
         assert!(book.ask_count() <= 2000);
@@ -875,18 +851,24 @@ mod performance_tests {
     fn test_string_parsing_edge_cases() {
         // Test various price formats for robustness
         let test_cases = [
-            "0.1", "1.0", "10.5", "100.25", "1000.123",
-            "50000.12345678", "0.00000001", "999999.99999999"
+            "0.1",
+            "1.0",
+            "10.5",
+            "100.25",
+            "1000.123",
+            "50000.12345678",
+            "0.00000001",
+            "999999.99999999",
         ];
-        
+
         for case in &test_cases {
             let price = Price::from_str_fast(case).unwrap();
             let qty = Quantity::from_str_fast(case).unwrap();
-            
+
             // Ensure round-trip conversion is accurate
             let price_f64 = price.to_f64();
             let qty_f64 = qty.to_f64();
-            
+
             assert!(price_f64 > 0.0);
             assert!(qty_f64 > 0.0);
         }
@@ -895,7 +877,7 @@ mod performance_tests {
     #[test]
     fn test_realistic_orderbook_scenario() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         // Initial depth snapshot with clear bid-ask spread
         let depth_json = r#"
         {
@@ -911,17 +893,17 @@ mod performance_tests {
                 ["50003.00", "0.9"]
             ]
         }"#;
-        
+
         let depth_update = DepthUpdate::from_json(depth_json).unwrap();
         book.update_depth(&depth_update).unwrap();
-        
+
         // Verify initial state - clear $4 spread
         let best = book.get_best_bid_ask().unwrap();
         assert_eq!(best.0, (49998.0, 1.5)); // Best bid: $49,998
         assert_eq!(best.1, (50002.0, 1.2)); // Best ask: $50,002
-        let initial_spread = best.1.0 - best.0.0;
+        let initial_spread = best.1 .0 - best.0 .0;
         assert_eq!(initial_spread, 4.0); // $4 spread
-        
+
         // Update with book ticker - tightening the spread
         let ticker_json = r#"
         {
@@ -932,30 +914,33 @@ mod performance_tests {
             "a": "50001.00",
             "A": "2.0"
         }"#;
-        
+
         let ticker_update = BookTickerUpdate::from_json(ticker_json).unwrap();
         book.update_book_ticker(&ticker_update).unwrap();
-        
+
         // Verify updated state - spread tightened to $2
         let best_after = book.get_best_bid_ask().unwrap();
         assert_eq!(best_after.0, (49999.0, 3.0)); // New best bid: $49,999 (higher)
         assert_eq!(best_after.1, (50001.0, 2.0)); // New best ask: $50,001 (lower)
-        let new_spread = best_after.1.0 - best_after.0.0;
+        let new_spread = best_after.1 .0 - best_after.0 .0;
         assert_eq!(new_spread, 2.0); // Tighter $2 spread
-        
+
         // Verify the spread tightened (more liquid market)
         assert!(new_spread < initial_spread);
-        
+
         // Verify orderbook integrity: bid < ask (no crossing)
-        assert!(best_after.0.0 < best_after.1.0);
-        
-        println!("Market improved: spread tightened from ${} to ${}", initial_spread, new_spread);
+        assert!(best_after.0 .0 < best_after.1 .0);
+
+        println!(
+            "Market improved: spread tightened from ${} to ${}",
+            initial_spread, new_spread
+        );
     }
 
     #[test]
     fn test_malicious_input_rejection() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-        
+
         // Test various malicious inputs
         let malicious_cases = vec![
             r#"{"lastUpdateId": 1, "bids": [["999999999999999999999", "1.0"]], "asks": []}"#,
@@ -963,14 +948,14 @@ mod performance_tests {
             r#"{"lastUpdateId": 1, "bids": [["inf", "1.0"]], "asks": []}"#,
             r#"{"lastUpdateId": 1, "bids": [["50000.0", "1e50"]], "asks": []}"#,
         ];
-        
+
         for malicious_json in malicious_cases {
             let update = DepthUpdate::from_json(malicious_json).unwrap();
             let result = book.update_depth(&update);
-            
+
             // Should fail gracefully without corrupting the orderbook
             assert!(result.is_err());
-            
+
             // Orderbook should still be functional
             assert_eq!(book.bid_count(), 0);
             assert_eq!(book.ask_count(), 0);
@@ -981,17 +966,17 @@ mod performance_tests {
     fn test_arrayvec_capacity_enforcement() {
         // Test that ArrayVec enforces the 20-level limit
         let mut bids = ArrayVec::<[String; 2], 20>::new();
-        
+
         // Fill to capacity
         for i in 0..20 {
             let result = bids.try_push([format!("{}.0", 50000 - i), "1.0".to_string()]);
             assert!(result.is_ok());
         }
-        
+
         // 21st element should fail
         let result = bids.try_push(["49979.0".to_string(), "1.0".to_string()]);
         assert!(result.is_err()); // ArrayVec enforces capacity limit
-        
+
         // Verify we still have exactly 20 elements
         assert_eq!(bids.len(), 20);
     }
