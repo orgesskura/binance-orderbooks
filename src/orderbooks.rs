@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+type Quantity = f64;
+
 // Custom error types for better error handling
 #[derive(Debug, Clone)]
 pub enum OrderBookError {
@@ -107,70 +109,6 @@ impl Price {
     }
 }
 
-// Quantity with overflow protection
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct Quantity(f64);
-
-impl Quantity {
-    const MAX_SAFE_QUANTITY: f64 = 1e15; // 1 quadrillion (reasonable limit)
-
-    #[inline(always)]
-    pub fn from_f64(qty: f64) -> Result<Self, OrderBookError> {
-        if !qty.is_finite() {
-            return Err(OrderBookError::InvalidQuantity(
-                "Quantity must be finite".to_string(),
-            ));
-        }
-
-        if qty < 0.0 {
-            return Err(OrderBookError::InvalidQuantity(
-                "Quantity cannot be negative".to_string(),
-            ));
-        }
-
-        if qty > Self::MAX_SAFE_QUANTITY {
-            return Err(OrderBookError::Overflow(format!(
-                "Quantity {} exceeds maximum safe value {}",
-                qty,
-                Self::MAX_SAFE_QUANTITY
-            )));
-        }
-
-        Ok(Quantity(qty))
-    }
-
-    #[inline(always)]
-    pub fn to_f64(self) -> f64 {
-        self.0
-    }
-
-    #[inline(always)]
-    pub fn is_zero(self) -> bool {
-        self.0 == 0.0
-    }
-
-    // Fast quantity parsing with overflow protection
-    pub fn from_str_fast(s: &str) -> Result<Self, OrderBookError> {
-        // Optimize for common single-digit cases first
-        match s.len() {
-            1 => {
-                let byte = s.as_bytes()[0];
-                if byte >= b'0' && byte <= b'9' {
-                    return Ok(Quantity((byte - b'0') as f64));
-                }
-            }
-            _ => {}
-        }
-
-        // Parse and validate
-        let qty = s.parse::<f64>().map_err(|_| {
-            OrderBookError::InvalidQuantity(format!("Cannot parse quantity: {}", s))
-        })?;
-
-        Self::from_f64(qty)
-    }
-}
-
 // Zero-allocation price level using stack-allocated array for level data
 #[derive(Debug, Copy, Clone)]
 pub struct PriceLevel {
@@ -181,7 +119,7 @@ pub struct PriceLevel {
 // Book Ticker Update with overflow protection
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BookTickerUpdate {
-    #[serde(rename = "s")]
+    #[serde(rename = "u")]
     pub update_id: u64,
     #[serde(rename = "s")]
     pub symbol: String,
@@ -205,29 +143,25 @@ impl BookTickerUpdate {
     #[inline]
     pub fn parse_best_bid(&self) -> Result<(Price, Quantity), OrderBookError> {
         let price = Price::from_f64(self.bid_price)?;
-        let qty = Quantity::from_f64(self.bid_qty)?;
 
-        if price.0 <= 0 || qty.0 <= 0.0 {
+        if price.0 <= 0 || self.bid_qty <= 0.0 {
             return Err(OrderBookError::InvalidPrice(
                 "Price and quantity must be positive".to_string(),
             ));
         }
 
-        Ok((price, qty))
+        Ok((price, self.bid_qty))
     }
 
     #[inline]
     pub fn parse_best_ask(&self) -> Result<(Price, Quantity), OrderBookError> {
         let price = Price::from_f64(self.ask_price)?;
-        let qty = Quantity::from_f64(self.ask_qty)?;
-
-        if price.0 <= 0 || qty.0 <= 0.0 {
+        if price.0 <= 0 || self.ask_qty <= 0.0 {
             return Err(OrderBookError::InvalidPrice(
                 "Price and quantity must be positive".to_string(),
             ));
         }
-
-        Ok((price, qty))
+        Ok((price, self.ask_qty))
     }
 }
 
@@ -252,13 +186,12 @@ impl DepthUpdate {
 
         for level in &self.bids {
             let price = Price::from_f64(level[0])?;
-            let qty = Quantity::from_f64(level[1])?;
-
-            if price.0 <= 0 || qty.0 < 0.0 {
+            if price.0 <= 0 || level[1] < 0.0 {
                 return Err(OrderBookError::InvalidPrice(
                     "Price must be positive, quantity must be non-negative".to_string(),
                 ));
             }
+            results.push((price, level[1]));
         }
 
         Ok(results)
@@ -269,13 +202,14 @@ impl DepthUpdate {
 
         for level in &self.asks {
             let price = Price::from_f64(level[0])?;
-            let qty = Quantity::from_f64(level[1])?;
 
-            if price.0 <= 0 || qty.0 < 0.0 {
+            if price.0 <= 0 || level[1] < 0.0 {
                 return Err(OrderBookError::InvalidPrice(
                     "Price must be positive, quantity must be non-negative".to_string(),
                 ));
             }
+
+            results.push((price, level[1]));
         }
 
         Ok(results)
@@ -330,13 +264,13 @@ impl OrderBook {
         let (ask_price, ask_qty) = data.parse_best_ask()?;
 
         // Batch updates to reduce BTreeMap operations
-        if bid_qty.is_zero() {
+        if bid_qty == 0.0 {
             self.bids.remove(&bid_price);
         } else {
             self.bids.insert(bid_price, bid_qty);
         }
 
-        if ask_qty.is_zero() {
+        if ask_qty == 0.0  {
             self.asks.remove(&ask_price);
         } else {
             self.asks.insert(ask_price, ask_qty);
@@ -359,7 +293,7 @@ impl OrderBook {
 
         // Batch all bid updates - more cache-friendly than interleaving
         for (price, qty) in bids {
-            if qty.is_zero() {
+            if qty == 0.0 {
                 self.bids.remove(&price);
             } else {
                 self.bids.insert(price, qty);
@@ -368,7 +302,7 @@ impl OrderBook {
 
         // Batch all ask updates
         for (price, qty) in asks {
-            if qty.is_zero() {
+            if qty == 0.0 {
                 self.asks.remove(&price);
             } else {
                 self.asks.insert(price, qty);
@@ -407,8 +341,8 @@ impl OrderBook {
     pub fn get_best_bid_ask(&self) -> Option<((f64, f64), (f64, f64))> {
         match (self.best_bid, self.best_ask) {
             (Some(bid), Some(ask)) => Some((
-                (bid.price.to_f64(), bid.quantity.to_f64()),
-                (ask.price.to_f64(), ask.quantity.to_f64()),
+                (bid.price.to_f64(), bid.quantity),
+                (ask.price.to_f64(), ask.quantity),
             )),
             _ => None,
         }
@@ -437,7 +371,7 @@ impl OrderBook {
         let (bids, asks) = self.get_levels(20);
 
         // Pre-calculate string capacity to avoid reallocation
-        let estimated_size = bids.len().max(asks.len()) * 80; // ~80 chars per line
+        let estimated_size = bids.len().max(asks.len()) * 64;
         let mut result = String::with_capacity(estimated_size);
 
         let max_levels = bids.len().max(asks.len());
