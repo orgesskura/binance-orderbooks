@@ -30,7 +30,7 @@ impl fmt::Display for OrderBookError {
 
 impl std::error::Error for OrderBookError {}
 
-// Force Inline
+// Force Inline. This function is called a lot.
 #[inline(always)]
 fn validate_price(price: f64) -> Result<f64, OrderBookError> {
     if !price.is_finite() || price <= 0.0 {
@@ -42,7 +42,7 @@ fn validate_price(price: f64) -> Result<f64, OrderBookError> {
     Ok(price)
 }
 
-// Force Inline
+// Force Inline. This function is called a lot.
 #[inline(always)]
 fn validate_quantity(quantity: f64) -> Result<f64, OrderBookError> {
     if !quantity.is_finite() || quantity < 0.0 {
@@ -507,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stack_allocation_performance() {
+    fn test_update_depth() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
         let mut bids = ArrayVec::new();
         bids.push([50000.0, 1.0]);
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn test_high_performance_book_ticker_update() {
+    fn test_book_ticker_update() {
         let mut book = OrderBook::new("BNBUSDT".to_string()).unwrap();
 
         let update = BookTickerUpdate {
@@ -589,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_depth_update() {
+    fn test_update_depth_2() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
 
         let mut bids = ArrayVec::new();
@@ -827,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn test_bulk_updates_performance() {
+    fn test_bulk_updates() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
 
         // Simulate high-frequency updates

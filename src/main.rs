@@ -1,11 +1,11 @@
 mod orderbooks;
-use crate::orderbooks::OrderBook;
+use crate::orderbooks::{DepthUpdate, OrderBook};
 
+use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
+use std::time::Instant;
 use tokio::time::interval;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use futures_util::{SinkExt, StreamExt};
-use std::time::Instant;
 
 #[derive(Debug)]
 pub enum BinanceError {
@@ -33,8 +33,8 @@ pub enum DepthLevel {
 
 #[derive(Debug, Clone)]
 pub enum UpdateSpeed {
-    Standard,  // 1000ms
-    Fast,      // 100ms
+    Standard,
+    Fast,
 }
 
 pub struct BinanceSingleStreamClient {
@@ -65,12 +65,16 @@ impl BinanceSingleStreamClient {
             UpdateSpeed::Fast => "@100ms",
         };
 
-        format!("{}@depth{}{}", symbol.to_lowercase(), level_str, speed_suffix)
+        format!(
+            "{}@depth{}{}",
+            symbol.to_lowercase(),
+            level_str,
+            speed_suffix
+        )
     }
 
     fn build_url(&self, stream_name: &str) -> Result<String, BinanceError> {
         let url = format!("{}/ws/{}", self.base_url, stream_name);
-
         // Validate URL
         url::Url::parse(&url).map_err(|e| BinanceError::UrlError(e.to_string()))?;
 
@@ -95,7 +99,8 @@ impl BinanceSingleStreamClient {
         println!("Stream: {}", stream_name);
 
         // Connect to WebSocket
-        let (ws_stream, _) = connect_async(&url).await
+        let (ws_stream, _) = connect_async(&url)
+            .await
             .map_err(|e| BinanceError::ConnectionError(e.to_string()))?;
 
         let (mut write, mut read) = ws_stream.split();
@@ -117,7 +122,7 @@ impl BinanceSingleStreamClient {
                         Some(Ok(Message::Ping(payload))) => {
                             // Respond to server ping with pong
                             if let Err(e) = write.send(Message::Pong(payload)).await {
-                                eprintln!("Failed to send pong: {}", e);
+                                println!("Failed to send pong: {}", e);
                                 break;
                             }
                         },
@@ -126,7 +131,7 @@ impl BinanceSingleStreamClient {
                             break;
                         },
                         Some(Err(e)) => {
-                            eprintln!("WebSocket error: {}", e);
+                            println!("WebSocket error: {}", e);
                             return Err(BinanceError::ConnectionError(e.to_string()));
                         },
                         None => {
@@ -139,7 +144,7 @@ impl BinanceSingleStreamClient {
                 // Send periodic ping
                 _ = ping_interval.tick() => {
                     if let Err(e) = write.send(Message::Ping(vec![])).await {
-                        eprintln!("Failed to send ping: {}", e);
+                        println!("Failed to send ping: {}", e);
                         break;
                     }
                 }
@@ -150,29 +155,30 @@ impl BinanceSingleStreamClient {
     }
 }
 
-// Example usage
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("Connecting to BTCUSDT depth stream...");
+    println!("Connecting to BTCUSDT partial book depth stream...");
     let mut last_print = Instant::now();
 
-
     let client = BinanceSingleStreamClient::new();
-    let orderbook = OrderBook::new("BTCUSDT".to_string());
+    let mut orderbook = OrderBook::new("BTCUSDT".to_string()).unwrap();
 
-    client.connect(
-        "BTCUSDT",
-        DepthLevel::Twenty,     // 20 levels
-        UpdateSpeed::Fast,    // 100ms updates
-        |message| {
-
-            if last_print.elapsed().as_secs() >= 10 {
-            println!("10 seconds passed. Processed {} messages", message_count);
-            last_print = Instant::now();
-            message_count = 0; // Reset counter
-        }
-        }
-    ).await?;
+    client
+        .connect(
+            "BTCUSDT",
+            DepthLevel::Twenty,
+            UpdateSpeed::Fast, // 100ms updates
+            move |message| {
+                let depth_update = DepthUpdate::from_json(&message).unwrap();
+                let _ = orderbook.update_depth(&depth_update);
+                if last_print.elapsed().as_secs() >= 5 {
+                    println!("{}", orderbook.to_string());
+                    println!("-------------------------------------------------------------");
+                    last_print = Instant::now();
+                }
+            },
+        )
+        .await?;
 
     Ok(())
 }
