@@ -171,7 +171,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             move |message| {
                 let depth_update = DepthUpdate::from_json(&message).unwrap();
                 let _ = orderbook.update_depth(&depth_update);
-                if last_print.elapsed().as_secs() >= 5 {
+                if last_print.elapsed().as_secs() >= 10 {
                     println!("{}", orderbook.to_string());
                     println!("-------------------------------------------------------------");
                     last_print = Instant::now();
