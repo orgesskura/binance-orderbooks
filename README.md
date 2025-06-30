@@ -4,7 +4,7 @@ A production-ready, high-performance Rust implementation of a Binance orderbook 
 
 ## Overview
 
-This implementation demonstrates expert-level Rust performance engineering for financial systems, featuring:
+This implementation demonstrates high proficiency Rust performance engineering for financial systems, featuring:
 
 - **Direct JSON deserialization** to typed values (no intermediate string allocation)
 - **Fixed-point arithmetic** for exact precision and overflow protection
@@ -40,7 +40,6 @@ Executes comprehensive test suite including:
 - Realistic trading scenarios with spread analysis
 - Performance tests with bulk update processing
 - Error handling for malicious/invalid inputs
-- WebSocket integration functionality
 
 Expected output:
 ```
