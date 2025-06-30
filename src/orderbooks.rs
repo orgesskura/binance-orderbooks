@@ -2,6 +2,8 @@ use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+// I am using [inline] on functions that are called a lot. That is to improve performance by eliminating function call overhead.
+
 // Type aliases for clarity
 type Price = f64;
 type Quantity = f64;
@@ -28,25 +30,30 @@ impl fmt::Display for OrderBookError {
 
 impl std::error::Error for OrderBookError {}
 
-// Helper function for price validation - HOT PATH
+// Force Inline
 #[inline(always)]
 fn validate_price(price: f64) -> Result<f64, OrderBookError> {
     if !price.is_finite() || price <= 0.0 {
-        return Err(OrderBookError::InvalidPrice(format!("Invalid price: {}", price)));
+        return Err(OrderBookError::InvalidPrice(format!(
+            "Invalid price: {}",
+            price
+        )));
     }
     Ok(price)
 }
 
-// Helper function for quantity validation - HOT PATH
+// Force Inline
 #[inline(always)]
 fn validate_quantity(quantity: f64) -> Result<f64, OrderBookError> {
     if !quantity.is_finite() || quantity < 0.0 {
-        return Err(OrderBookError::InvalidQuantity(format!("Invalid quantity: {}", quantity)));
+        return Err(OrderBookError::InvalidQuantity(format!(
+            "Invalid quantity: {}",
+            quantity
+        )));
     }
     Ok(quantity)
 }
 
-// Stack-allocated price level
 #[derive(Debug, Copy, Clone)]
 pub struct PriceLevel {
     pub price: Price,
@@ -62,7 +69,6 @@ where
     s.parse().map_err(serde::de::Error::custom)
 }
 
-// Book Ticker Update
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BookTickerUpdate {
     #[serde(rename = "u")]
@@ -85,7 +91,7 @@ impl BookTickerUpdate {
             .map_err(|e| OrderBookError::SerializationError(e.to_string()))
     }
 
-    // Safe parsing with validation - CALLED FROM HOT PATH
+    // Safe parsing with validation
     #[inline]
     pub fn parse_best_bid(&self) -> Result<(Price, Quantity), OrderBookError> {
         let price = validate_price(self.bid_price)?;
@@ -100,6 +106,7 @@ impl BookTickerUpdate {
         Ok((price, quantity))
     }
 
+    // Safe parsing with validation
     #[inline]
     pub fn parse_best_ask(&self) -> Result<(Price, Quantity), OrderBookError> {
         let price = validate_price(self.ask_price)?;
@@ -116,7 +123,9 @@ impl BookTickerUpdate {
 }
 
 // Custom deserializer for string array to f64 array conversion
-fn deserialize_string_array_to_f64<'de, D>(deserializer: D) -> Result<ArrayVec<[f64; 2], 20>, D::Error>
+fn deserialize_string_array_to_f64<'de, D>(
+    deserializer: D,
+) -> Result<ArrayVec<[f64; 2], 20>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -135,15 +144,15 @@ where
     Ok(result)
 }
 
-// Depth Update with maximum 20 levels - ZERO HEAP ALLOCATION
+// Depth Update with maximum 20 levels - No heap allocations
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DepthUpdate {
     #[serde(rename = "lastUpdateId")]
     pub last_update_id: u64,
     #[serde(deserialize_with = "deserialize_string_array_to_f64")]
-    pub bids: ArrayVec<[f64; 2], 20>, // Stack-allocated, max 20 levels
+    pub bids: ArrayVec<[f64; 2], 20>,
     #[serde(deserialize_with = "deserialize_string_array_to_f64")]
-    pub asks: ArrayVec<[f64; 2], 20>, // Stack-allocated, max 20 levels
+    pub asks: ArrayVec<[f64; 2], 20>,
 }
 
 impl DepthUpdate {
@@ -152,7 +161,7 @@ impl DepthUpdate {
             .map_err(|e| OrderBookError::SerializationError(e.to_string()))
     }
 
-    // Batch parsing with validation - ZERO HEAP ALLOCATION
+    // Batch parsing with validation
     #[inline]
     pub fn parse_bids(&self) -> Result<ArrayVec<(Price, Quantity), 20>, OrderBookError> {
         let mut results = ArrayVec::new();
@@ -166,6 +175,7 @@ impl DepthUpdate {
         Ok(results)
     }
 
+    // Batch parsing with validation
     #[inline]
     pub fn parse_asks(&self) -> Result<ArrayVec<(Price, Quantity), 20>, OrderBookError> {
         let mut results = ArrayVec::new();
@@ -180,15 +190,15 @@ impl DepthUpdate {
     }
 }
 
-// High-performance OrderBook with stack-allocated arrays
 #[derive(Debug, Clone)]
 pub struct OrderBook {
     pub symbol: String,
-
-    // Stack-allocated sorted arrays (20 levels max)
-    bids: ArrayVec<PriceLevel, 20>,  // Sorted descending (best first)
-    asks: ArrayVec<PriceLevel, 20>,  // Sorted ascending (best first)
-
+    // Stack-allocated sorted arrays (20 levels max) . Firstly I was going to use BTreeMap to store prices and quantities maps.
+    // However, we are guaranteed to have 20 levels. Also, we parse f64 for price and quantities. f64 does not implement Ord so
+    // I would need to convert f64 -> u64 each time in order to use BTreeMap keys effectively. That and the fact I would need to allocate on the
+    // heap made ArrayVec a better option for the problem's specifications ( With BTreeMap higher cache misses , more allocations on the heap. arrayvec is contigous on stack and can fit in the cache for 20 levels).
+    bids: ArrayVec<PriceLevel, 20>, // Sorted descending (best first)
+    asks: ArrayVec<PriceLevel, 20>, // Sorted ascending (best first)
     last_update_id: u64,
 }
 
@@ -208,12 +218,13 @@ impl OrderBook {
         })
     }
 
-    // Update single best bid/ask (Book Ticker) - HOTTEST PATH
+    // Hot Path
     #[inline]
     pub fn update_book_ticker(&mut self, data: &BookTickerUpdate) -> Result<(), OrderBookError> {
         if data.symbol != self.symbol {
             return Err(OrderBookError::InvalidSymbol(format!(
-                "Symbol mismatch: expected {}, got {}", self.symbol, data.symbol
+                "Symbol mismatch: expected {}, got {}",
+                self.symbol, data.symbol
             )));
         }
 
@@ -221,7 +232,9 @@ impl OrderBook {
         let ask_price = validate_price(data.ask_price)?;
 
         if data.bid_qty <= 0.0 || data.ask_qty <= 0.0 {
-            return Err(OrderBookError::InvalidQuantity("Quantities must be positive".to_string()));
+            return Err(OrderBookError::InvalidQuantity(
+                "Quantities must be positive".to_string(),
+            ));
         }
 
         // Update best bid
@@ -234,7 +247,7 @@ impl OrderBook {
         Ok(())
     }
 
-    // Update multiple levels (Depth Update) - FREQUENTLY CALLED PER SPEC
+    // Hot Path
     #[inline]
     pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
         // Process bid updates
@@ -247,7 +260,9 @@ impl OrderBook {
             } else if qty > 0.0 {
                 self.update_or_insert_bid(price, qty);
             } else {
-                return Err(OrderBookError::InvalidQuantity("Quantity cannot be negative".to_string()));
+                return Err(OrderBookError::InvalidQuantity(
+                    "Quantity cannot be negative".to_string(),
+                ));
             }
         }
 
@@ -261,7 +276,9 @@ impl OrderBook {
             } else if qty > 0.0 {
                 self.update_or_insert_ask(price, qty);
             } else {
-                return Err(OrderBookError::InvalidQuantity("Quantity cannot be negative".to_string()));
+                return Err(OrderBookError::InvalidQuantity(
+                    "Quantity cannot be negative".to_string(),
+                ));
             }
         }
 
@@ -269,7 +286,7 @@ impl OrderBook {
         Ok(())
     }
 
-    // O(1) best bid/ask access (first elements in sorted arrays) - VERY HOT PATH
+    // O(1) best bid/ask access (first elements in sorted arrays) - Force inline
     #[inline(always)]
     pub fn get_best_bid_ask(&self) -> Option<((f64, f64), (f64, f64))> {
         match (self.bids.first(), self.asks.first()) {
@@ -281,11 +298,14 @@ impl OrderBook {
         }
     }
 
-    // Optimized bid insertion maintaining descending order - HOT PATH
+    // Optimized bid insertion maintaining descending order
     #[inline]
     fn update_or_insert_bid(&mut self, price: Price, quantity: Quantity) {
         // Find existing level or insertion point (reverse order for bids)
-        match self.bids.binary_search_by(|level| level.price.partial_cmp(&price).unwrap().reverse()) {
+        match self
+            .bids
+            .binary_search_by(|level| level.price.partial_cmp(&price).unwrap().reverse())
+        {
             Ok(index) => {
                 // Update existing level
                 self.bids[index].quantity = quantity;
@@ -306,10 +326,13 @@ impl OrderBook {
         }
     }
 
-    // Optimized ask insertion maintaining ascending order - HOT PATH
+    // Optimized ask insertion maintaining ascending order
     #[inline]
     fn update_or_insert_ask(&mut self, price: Price, quantity: Quantity) {
-        match self.asks.binary_search_by(|level| level.price.partial_cmp(&price).unwrap()) {
+        match self
+            .asks
+            .binary_search_by(|level| level.price.partial_cmp(&price).unwrap())
+        {
             Ok(index) => {
                 // Update existing level
                 self.asks[index].quantity = quantity;
@@ -332,19 +355,25 @@ impl OrderBook {
 
     #[inline]
     fn remove_bid(&mut self, price: Price) {
-        if let Ok(index) = self.bids.binary_search_by(|level| level.price.partial_cmp(&price).unwrap().reverse()) {
+        if let Ok(index) = self
+            .bids
+            .binary_search_by(|level| level.price.partial_cmp(&price).unwrap().reverse())
+        {
             self.bids.remove(index);
         }
     }
 
     #[inline]
     fn remove_ask(&mut self, price: Price) {
-        if let Ok(index) = self.asks.binary_search_by(|level| level.price.partial_cmp(&price).unwrap()) {
+        if let Ok(index) = self
+            .asks
+            .binary_search_by(|level| level.price.partial_cmp(&price).unwrap())
+        {
             self.asks.remove(index);
         }
     }
 
-    // Fast level extraction with stack-allocated arrays - ZERO HEAP ALLOCATION
+    // Fast level extraction with stack-allocated arrays
     #[inline]
     pub fn get_levels(&self, depth: usize) -> (ArrayVec<(f64, f64), 20>, ArrayVec<(f64, f64), 20>) {
         let bid_depth = depth.min(self.bids.len()).min(20);
@@ -399,18 +428,18 @@ impl OrderBook {
         result
     }
 
-    // Performance monitoring helpers - FREQUENTLY CALLED
-    #[inline(always)]
+    // Performance monitoring helpers
+    #[inline]
     pub fn bid_count(&self) -> usize {
         self.bids.len()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn ask_count(&self) -> usize {
         self.asks.len()
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn last_update_id(&self) -> u64 {
         self.last_update_id
     }
@@ -480,8 +509,6 @@ mod tests {
     #[test]
     fn test_stack_allocation_performance() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-
-        // Create update with ArrayVec - all stack allocated!
         let mut bids = ArrayVec::new();
         bids.push([50000.0, 1.0]);
         bids.push([49999.0, 2.0]);
@@ -499,8 +526,8 @@ mod tests {
         book.update_depth(&update).unwrap();
 
         let best = book.get_best_bid_ask().unwrap();
-        assert_eq!(best.0, (50000.0, 1.0));  // Best bid
-        assert_eq!(best.1, (50001.0, 1.5));  // Best ask
+        assert_eq!(best.0, (50000.0, 1.0)); // Best bid
+        assert_eq!(best.1, (50001.0, 1.5)); // Best ask
     }
 
     #[test]
@@ -555,10 +582,10 @@ mod tests {
         book.update_book_ticker(&update).unwrap();
 
         let best = book.get_best_bid_ask().unwrap();
-        assert!((best.0.0 - 25.3519).abs() < 1e-6);
-        assert!((best.0.1 - 31.21).abs() < 1e-6);
-        assert!((best.1.0 - 25.3652).abs() < 1e-6);
-        assert!((best.1.1 - 40.66).abs() < 1e-6);
+        assert!((best.0 .0 - 25.3519).abs() < 1e-6);
+        assert!((best.0 .1 - 31.21).abs() < 1e-6);
+        assert!((best.1 .0 - 25.3652).abs() < 1e-6);
+        assert!((best.1 .1 - 40.66).abs() < 1e-6);
     }
 
     #[test]
@@ -742,7 +769,7 @@ mod tests {
         let best = book.get_best_bid_ask().unwrap();
         assert_eq!(best.0, (49998.0, 1.5)); // Best bid: $49,998
         assert_eq!(best.1, (50002.0, 1.2)); // Best ask: $50,002
-        let initial_spread = best.1.0 - best.0.0;
+        let initial_spread = best.1 .0 - best.0 .0;
         assert_eq!(initial_spread, 4.0); // $4 spread
 
         // Update with book ticker - tightening the spread
@@ -761,14 +788,14 @@ mod tests {
         let best_after = book.get_best_bid_ask().unwrap();
         assert_eq!(best_after.0, (49999.0, 3.0)); // New best bid: $49,999 (higher)
         assert_eq!(best_after.1, (50001.0, 2.0)); // New best ask: $50,001 (lower)
-        let new_spread = best_after.1.0 - best_after.0.0;
+        let new_spread = best_after.1 .0 - best_after.0 .0;
         assert_eq!(new_spread, 2.0); // Tighter $2 spread
 
         // Verify the spread tightened (more liquid market)
         assert!(new_spread < initial_spread);
 
         // Verify orderbook integrity: bid < ask (no crossing)
-        assert!(best_after.0.0 < best_after.1.0);
+        assert!(best_after.0 .0 < best_after.1 .0);
     }
 
     #[test]
