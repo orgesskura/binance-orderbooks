@@ -10,7 +10,7 @@ This implementation demonstrates high proficiency Rust performance engineering f
 - **Fixed-point arithmetic** for exact precision and overflow protection
 - **Stack-allocated data structures** (ArrayVec) for zero heap allocation
 - **Cache-optimized memory layout** for high-frequency trading scenarios
-- **Real-time WebSocket integration** with Binance depth20@100ms streams
+- **Real-time WebSocket integration** with configurable binance stream
 - **Comprehensive input validation** with graceful error handling
 
 Built specifically for cryptocurrency market making and high-frequency trading applications requiring microsecond-level performance with bulletproof safety guarantees.
@@ -77,7 +77,7 @@ Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial book dep
 - **Prints top 20 best bids/asks every 10 seconds** in formatted table
 - **Shows real-time market data** with live price movements
 - **Demonstrates production-ready WebSocket handling** with heartbeat and error recovery
-- **Processes thousands of updates per second** with microsecond-level latency
+- **Is capable of processing thousands of updates per second** ( sub millisecond latency )
 
 Expected output:
 ```
