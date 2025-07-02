@@ -106,7 +106,6 @@ impl BookTickerUpdate {
         Ok((price, quantity))
     }
 
-    // Safe parsing with validation
     #[inline]
     pub fn parse_best_ask(&self) -> Result<(Price, Quantity), OrderBookError> {
         let price = validate_price(self.ask_price)?;
@@ -194,7 +193,8 @@ impl DepthUpdate {
 pub struct OrderBook {
     pub symbol: String,
     // Stack-allocated sorted arrays (20 levels max) . Firstly I was going to use BTreeMap to store prices and quantities maps.
-    // However, we are guaranteed to have 20 levels. Also, we parse f64 for price and quantities. f64 does not implement Ord so
+    // However, we are guaranteed to have 20 levels and we are only interested in top 20 levels.
+    // Also, we parse f64 for price and quantities. f64 does not implement Ord so
     // I would need to convert f64 -> u64 each time in order to use BTreeMap keys effectively. That and the fact I would need to allocate on the
     // heap made ArrayVec a better option for the problem's specifications ( With BTreeMap higher cache misses , more allocations on the heap. arrayvec is contigous on stack and can fit in the cache for 20 levels).
     bids: ArrayVec<PriceLevel, 20>, // Sorted descending (best first)
@@ -218,7 +218,6 @@ impl OrderBook {
         })
     }
 
-    // Hot Path
     #[inline]
     pub fn update_book_ticker(&mut self, data: &BookTickerUpdate) -> Result<(), OrderBookError> {
         if data.symbol != self.symbol {
@@ -247,7 +246,6 @@ impl OrderBook {
         Ok(())
     }
 
-    // Hot Path
     #[inline]
     pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
         // Process bid updates
