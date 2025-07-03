@@ -1,6 +1,6 @@
 # High-Performance Binance Orderbook Implementation
 
-A production-ready, high-performance Rust implementation of a Binance orderbook that processes Individual Symbol Book Ticker and Partial Book Depth streams with microsecond-level latency optimization and comprehensive overflow protection.
+A production-ready, high-performance Rust implementation of a Binance orderbook that processes Individual Symbol Book Ticker and Partial Book Depth streams with microsecond-level latency optimization and comprehensive overflow protection. Check **description.md** for more.
 
 ## Overview
 
