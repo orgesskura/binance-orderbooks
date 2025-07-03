@@ -1,6 +1,7 @@
 mod orderbooks;
 use crate::orderbooks::{DepthUpdate, OrderBook};
 
+use core::num;
 use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 use std::time::Instant;
@@ -159,6 +160,8 @@ impl BinanceSingleStreamClient {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Connecting to BTCUSDT partial book depth stream...");
     let mut last_print = Instant::now();
+    let mut total_depth_time = 0;
+    let mut num_executions = 0;
 
     let client = BinanceSingleStreamClient::new();
     let mut orderbook = OrderBook::new("BTCUSDT".to_string()).unwrap();
@@ -170,11 +173,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             UpdateSpeed::Fast, // 100ms updates
             move |message| {
                 let depth_update = DepthUpdate::from_json(&message).unwrap();
+                let start = Instant::now();
                 let _ = orderbook.update_depth(&depth_update);
+                let elapsed_time = (Instant::now() - start).as_micros();
+                total_depth_time += elapsed_time;
+                num_executions += 1;
                 if last_print.elapsed().as_secs() >= 10 {
+                    let average_execution = total_depth_time as f32 / num_executions as f32;
+                    println!("Average depth update took {average_execution} microseconds");
                     println!("{}", orderbook.to_string());
                     println!("-------------------------------------------------------------");
                     last_print = Instant::now();
+                    total_depth_time = 0;
+                    num_executions = 0;
                 }
             },
         )
