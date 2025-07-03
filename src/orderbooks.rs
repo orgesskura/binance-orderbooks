@@ -143,6 +143,23 @@ where
     Ok(result)
 }
 
+// Custom deserializer for string array to f64 vec conversion
+fn deserialize_vec_to_f64<'de, D>(deserializer: D) -> Result<Vec<[f64; 2]>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let string_arrays: Vec<[String; 2]> = Vec::deserialize(deserializer)?;
+    let mut result = Vec::new();
+
+    for [price_str, qty_str] in string_arrays {
+        let price = price_str.parse().map_err(serde::de::Error::custom)?;
+        let qty = qty_str.parse().map_err(serde::de::Error::custom)?;
+        result.push([price, qty]);
+    }
+
+    Ok(result)
+}
+
 // Depth Update with maximum 20 levels - No heap allocations
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PartialDepthUpdate {
@@ -178,6 +195,51 @@ impl PartialDepthUpdate {
     #[inline]
     pub fn parse_asks(&self) -> Result<ArrayVec<(Price, Quantity), 20>, OrderBookError> {
         let mut results = ArrayVec::new();
+
+        for level in &self.asks {
+            let price = validate_price(level[0])?;
+            let quantity = validate_quantity(level[1])?;
+            results.push((price, quantity));
+        }
+
+        Ok(results)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct DepthUpdate {
+    #[serde(rename = "u")]
+    pub last_update_id: u64,
+    #[serde(rename = "b", deserialize_with = "deserialize_vec_to_f64")]
+    pub bids: Vec<[f64; 2]>,
+    #[serde(rename = "a",deserialize_with = "deserialize_vec_to_f64")]
+    pub asks: Vec<[f64; 2]>,
+}
+
+impl DepthUpdate {
+    pub fn from_json(json_str: &str) -> Result<Self, OrderBookError> {
+        serde_json::from_str(json_str)
+            .map_err(|e| OrderBookError::SerializationError(e.to_string()))
+    }
+
+    // Batch parsing with validation
+    #[inline]
+    pub fn parse_bids(&self) -> Result<Vec<(Price, Quantity)>, OrderBookError> {
+        let mut results = Vec::new();
+
+        for level in &self.bids {
+            let price = validate_price(level[0])?;
+            let quantity = validate_quantity(level[1])?;
+            results.push((price, quantity));
+        }
+
+        Ok(results)
+    }
+
+    // Batch parsing with validation
+    #[inline]
+    pub fn parse_asks(&self) -> Result<Vec<(Price, Quantity)>, OrderBookError> {
+        let mut results = Vec::new();
 
         for level in &self.asks {
             let price = validate_price(level[0])?;
@@ -259,13 +321,11 @@ impl OrderBook {
             let price = validate_price(bid_data[0])?;
             let qty = bid_data[1];
 
-            if qty == 0.0 {
-                self.remove_bid(price);
-            } else if qty > 0.0 {
+            if qty > 0.0 {
                 self.update_or_insert_bid(price, qty);
             } else {
                 return Err(OrderBookError::InvalidQuantity(
-                    "Quantity cannot be negative".to_string(),
+                    "Quantity needs to be greater than 0".to_string(),
                 ));
             }
         }
@@ -275,13 +335,11 @@ impl OrderBook {
             let price = validate_price(ask_data[0])?;
             let qty = ask_data[1];
 
-            if qty == 0.0 {
-                self.remove_ask(price);
-            } else if qty > 0.0 {
+            if qty > 0.0 {
                 self.update_or_insert_ask(price, qty);
             } else {
                 return Err(OrderBookError::InvalidQuantity(
-                    "Quantity cannot be negative".to_string(),
+                    "Quantity needs to be greater than 0".to_string(),
                 ));
             }
         }
@@ -291,7 +349,10 @@ impl OrderBook {
     }
 
     #[inline]
-    pub fn update_depth(&mut self, data: &PartialDepthUpdate) -> Result<(), OrderBookError> {
+    pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
+        if data.last_update_id < self.last_update_id{
+            return Ok(());
+        }
         // Process bid updates
         for bid_data in &data.bids {
             let price = validate_price(bid_data[0])?;
@@ -565,7 +626,7 @@ mod tests {
             asks,
         };
 
-        book.update_depth(&update).unwrap();
+        book.update_partial_depth(&update).unwrap();
 
         let best = book.get_best_bid_ask().unwrap();
         assert_eq!(best.0, (50000.0, 1.0)); // Best bid
@@ -593,7 +654,7 @@ mod tests {
             asks,
         };
 
-        book.update_depth(&update).unwrap();
+        book.update_partial_depth(&update).unwrap();
 
         let (bids, asks) = book.get_levels(3);
 
@@ -648,7 +709,7 @@ mod tests {
             asks,
         };
 
-        book.update_depth(&update).unwrap();
+        book.update_partial_depth(&update).unwrap();
 
         let best = book.get_best_bid_ask().unwrap();
         assert_eq!(best.0, (50000.0, 1.0));
@@ -672,7 +733,7 @@ mod tests {
             bids: bids1,
             asks: asks1,
         };
-        book.update_depth(&update1).unwrap();
+        book.update_partial_depth(&update1).unwrap();
         assert!(book.get_best_bid_ask().is_some());
 
         // Remove with zero quantity
@@ -686,7 +747,7 @@ mod tests {
             bids: bids2,
             asks: asks2,
         };
-        book.update_depth(&update2).unwrap();
+        book.update_partial_depth(&update2).unwrap();
         assert!(book.get_best_bid_ask().is_none());
     }
 
@@ -748,7 +809,7 @@ mod tests {
             asks,
         };
 
-        book.update_depth(&update).unwrap();
+        book.update_partial_depth(&update).unwrap();
         let formatted = book.to_string();
 
         // Check that the output contains expected elements
@@ -805,7 +866,7 @@ mod tests {
         }"#;
 
         let depth_update = PartialDepthUpdate::from_json(depth_json).unwrap();
-        book.update_depth(&depth_update).unwrap();
+        book.update_partial_depth(&depth_update).unwrap();
 
         // Verify initial state - clear $4 spread
         let best = book.get_best_bid_ask().unwrap();
@@ -856,7 +917,7 @@ mod tests {
             asks: ArrayVec::new(),
         };
 
-        book.update_depth(&update).unwrap();
+        book.update_partial_depth(&update).unwrap();
 
         // Should have exactly 20 levels
         assert_eq!(book.bid_count(), 20);
@@ -888,7 +949,7 @@ mod tests {
                 asks,
             };
 
-            book.update_depth(&update).unwrap();
+            book.update_partial_depth(&update).unwrap();
 
             // Verify we can still access best levels efficiently
             assert!(book.get_best_bid_ask().is_some());
@@ -934,7 +995,7 @@ mod tests {
         });
 
         for malicious_update in malicious_cases {
-            let result = book.update_depth(&malicious_update);
+            let result = book.update_partial_depth(&malicious_update);
 
             // Should fail gracefully without corrupting the orderbook
             assert!(result.is_err());

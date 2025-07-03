@@ -1,5 +1,5 @@
 mod orderbooks;
-use crate::orderbooks::{OrderBook, PartialDepthUpdate};
+use crate::orderbooks::{DepthUpdate, OrderBook, PartialDepthUpdate};
 use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 use std::time::Instant;
@@ -52,11 +52,17 @@ impl BinanceSingleStreamClient {
         self
     }
 
-    fn build_stream_name(&self, symbol: &str, level: DepthLevel, speed: UpdateSpeed) -> String {
+    fn build_stream_name(
+        &self,
+        symbol: &str,
+        level: Option<DepthLevel>,
+        speed: UpdateSpeed,
+    ) -> String {
         let level_str = match level {
-            DepthLevel::Five => "5",
-            DepthLevel::Ten => "10",
-            DepthLevel::Twenty => "20",
+            Some(DepthLevel::Five) => "5",
+            Some(DepthLevel::Ten) => "10",
+            Some(DepthLevel::Twenty) => "20",
+            _ => "",
         };
 
         let speed_suffix = match speed {
@@ -83,7 +89,7 @@ impl BinanceSingleStreamClient {
     pub async fn connect<F>(
         &self,
         symbol: &str,
-        level: DepthLevel,
+        level: Option<DepthLevel>,
         speed: UpdateSpeed,
         mut message_handler: F,
     ) -> Result<(), BinanceError>
@@ -156,7 +162,7 @@ impl BinanceSingleStreamClient {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    run_partial_depth_stream().await?;
+    run_full_depth_stream().await?;
     Ok(())
 }
 
@@ -172,12 +178,49 @@ async fn run_partial_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
     client
         .connect(
             "BTCUSDT",
-            DepthLevel::Twenty,
+            Some(DepthLevel::Twenty),
             UpdateSpeed::Fast, // 100ms updates
             move |message| {
                 let depth_update = PartialDepthUpdate::from_json(&message).unwrap();
                 let start = Instant::now();
                 let _ = orderbook.update_partial_depth(&depth_update);
+                let elapsed_time = (Instant::now() - start).as_micros();
+                total_depth_time += elapsed_time;
+                num_executions += 1;
+                if last_print.elapsed().as_secs() >= 10 {
+                    let average_execution = total_depth_time as f32 / num_executions as f32;
+                    println!("Average depth update took {average_execution} microseconds");
+                    println!("{}", orderbook.to_string());
+                    println!("-------------------------------------------------------------");
+                    last_print = Instant::now();
+                    total_depth_time = 0;
+                    num_executions = 0;
+                }
+            },
+        )
+        .await?;
+
+    Ok(())
+}
+
+async fn run_full_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
+    println!("Connecting to BTCUSDT book depth stream...");
+    let mut last_print = Instant::now();
+    let mut total_depth_time = 0;
+    let mut num_executions = 0;
+
+    let client = BinanceSingleStreamClient::new();
+    let mut orderbook = OrderBook::new("BTCUSDT".to_string()).unwrap();
+
+    client
+        .connect(
+            "BTCUSDT",
+            None,
+            UpdateSpeed::Fast, // 100ms updates
+            move |message| {
+                let depth_update = DepthUpdate::from_json(&message).unwrap();
+                let start = Instant::now();
+                let _ = orderbook.update_depth(&depth_update);
                 let elapsed_time = (Instant::now() - start).as_micros();
                 total_depth_time += elapsed_time;
                 num_executions += 1;
