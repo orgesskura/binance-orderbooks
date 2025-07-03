@@ -77,7 +77,7 @@ Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial book dep
 - **Prints top 20 best bids/asks every 10 seconds** in formatted table
 - **Shows real-time market data** with live price movements
 - **Demonstrates production-ready WebSocket handling** with heartbeat and error recovery
-- **Is capable of processing thousands of updates per second** ( laptop measured latency on average 4 microseconds )
+- **Is capable of processing thousands of updates per second** ( laptop measured latency on average 5 microseconds )
 
 Expected output:
 ```

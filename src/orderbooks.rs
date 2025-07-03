@@ -145,7 +145,7 @@ where
 
 // Depth Update with maximum 20 levels - No heap allocations
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct DepthUpdate {
+pub struct PartialDepthUpdate {
     #[serde(rename = "lastUpdateId")]
     pub last_update_id: u64,
     #[serde(deserialize_with = "deserialize_string_array_to_f64")]
@@ -154,7 +154,7 @@ pub struct DepthUpdate {
     pub asks: ArrayVec<[f64; 2], 20>,
 }
 
-impl DepthUpdate {
+impl PartialDepthUpdate {
     pub fn from_json(json_str: &str) -> Result<Self, OrderBookError> {
         serde_json::from_str(json_str)
             .map_err(|e| OrderBookError::SerializationError(e.to_string()))
@@ -247,7 +247,51 @@ impl OrderBook {
     }
 
     #[inline]
-    pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
+    pub fn update_partial_depth(
+        &mut self,
+        data: &PartialDepthUpdate,
+    ) -> Result<(), OrderBookError> {
+        // Very efficient way of cleaning up memory
+        std::mem::take(&mut self.bids);
+        std::mem::take(&mut self.asks);
+        // Process bid updates
+        for bid_data in &data.bids {
+            let price = validate_price(bid_data[0])?;
+            let qty = bid_data[1];
+
+            if qty == 0.0 {
+                self.remove_bid(price);
+            } else if qty > 0.0 {
+                self.update_or_insert_bid(price, qty);
+            } else {
+                return Err(OrderBookError::InvalidQuantity(
+                    "Quantity cannot be negative".to_string(),
+                ));
+            }
+        }
+
+        // Process ask updates
+        for ask_data in &data.asks {
+            let price = validate_price(ask_data[0])?;
+            let qty = ask_data[1];
+
+            if qty == 0.0 {
+                self.remove_ask(price);
+            } else if qty > 0.0 {
+                self.update_or_insert_ask(price, qty);
+            } else {
+                return Err(OrderBookError::InvalidQuantity(
+                    "Quantity cannot be negative".to_string(),
+                ));
+            }
+        }
+
+        self.last_update_id = data.last_update_id;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn update_depth(&mut self, data: &PartialDepthUpdate) -> Result<(), OrderBookError> {
         // Process bid updates
         for bid_data in &data.bids {
             let price = validate_price(bid_data[0])?;
@@ -485,7 +529,7 @@ mod tests {
             ]
         }"#;
 
-        let update = DepthUpdate::from_json(json).unwrap();
+        let update = PartialDepthUpdate::from_json(json).unwrap();
         assert_eq!(update.last_update_id, 160);
 
         let bids = update.parse_bids().unwrap();
@@ -515,7 +559,7 @@ mod tests {
         asks.push([50001.0, 1.5]);
         asks.push([50002.0, 2.5]);
 
-        let update = DepthUpdate {
+        let update = PartialDepthUpdate {
             last_update_id: 1,
             bids,
             asks,
@@ -543,7 +587,7 @@ mod tests {
         asks.push([50001.0, 2.0]);
         asks.push([50003.0, 1.5]);
 
-        let update = DepthUpdate {
+        let update = PartialDepthUpdate {
             last_update_id: 1,
             bids,
             asks,
@@ -598,7 +642,7 @@ mod tests {
         asks.push([50001.0, 1.5]);
         asks.push([50002.0, 2.5]);
 
-        let update = DepthUpdate {
+        let update = PartialDepthUpdate {
             last_update_id: 160,
             bids,
             asks,
@@ -623,7 +667,7 @@ mod tests {
         let mut asks1 = ArrayVec::new();
         asks1.push([50001.0, 1.0]);
 
-        let update1 = DepthUpdate {
+        let update1 = PartialDepthUpdate {
             last_update_id: 1,
             bids: bids1,
             asks: asks1,
@@ -637,7 +681,7 @@ mod tests {
         let mut asks2 = ArrayVec::new();
         asks2.push([50001.0, 0.0]);
 
-        let update2 = DepthUpdate {
+        let update2 = PartialDepthUpdate {
             last_update_id: 2,
             bids: bids2,
             asks: asks2,
@@ -698,7 +742,7 @@ mod tests {
         asks.push([50001.0, 1.5]);
         asks.push([50002.0, 2.5]);
 
-        let update = DepthUpdate {
+        let update = PartialDepthUpdate {
             last_update_id: 1,
             bids,
             asks,
@@ -760,7 +804,7 @@ mod tests {
             ]
         }"#;
 
-        let depth_update = DepthUpdate::from_json(depth_json).unwrap();
+        let depth_update = PartialDepthUpdate::from_json(depth_json).unwrap();
         book.update_depth(&depth_update).unwrap();
 
         // Verify initial state - clear $4 spread
@@ -806,7 +850,7 @@ mod tests {
             bids.push([50000.0 - i as f64, 1.0]);
         }
 
-        let update = DepthUpdate {
+        let update = PartialDepthUpdate {
             last_update_id: 1,
             bids,
             asks: ArrayVec::new(),
@@ -838,7 +882,7 @@ mod tests {
             asks.push([50001.0 + i as f64, 1.5]);
             asks.push([50001.5 + i as f64, 2.5]);
 
-            let update = DepthUpdate {
+            let update = PartialDepthUpdate {
                 last_update_id: i,
                 bids,
                 asks,
@@ -865,7 +909,7 @@ mod tests {
         // Case 1: Infinity
         let mut bids1 = ArrayVec::new();
         bids1.push([f64::INFINITY, 1.0]);
-        malicious_cases.push(DepthUpdate {
+        malicious_cases.push(PartialDepthUpdate {
             last_update_id: 1,
             bids: bids1,
             asks: ArrayVec::new(),
@@ -874,7 +918,7 @@ mod tests {
         // Case 2: NaN
         let mut bids2 = ArrayVec::new();
         bids2.push([f64::NAN, 1.0]);
-        malicious_cases.push(DepthUpdate {
+        malicious_cases.push(PartialDepthUpdate {
             last_update_id: 2,
             bids: bids2,
             asks: ArrayVec::new(),
@@ -883,7 +927,7 @@ mod tests {
         // Case 3: Negative
         let mut bids3 = ArrayVec::new();
         bids3.push([-1.0, 1.0]);
-        malicious_cases.push(DepthUpdate {
+        malicious_cases.push(PartialDepthUpdate {
             last_update_id: 3,
             bids: bids3,
             asks: ArrayVec::new(),
