@@ -82,11 +82,11 @@ Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial  or full
 
 Expected output:
 ```
-Connecting to BTCUSDT partial book depth stream...
-Connecting to: wss://stream.binance.com:9443/ws/btcusdt@depth20@100ms
+Connecting to BTCUSDT book depth stream...
+Connecting to: wss://stream.binance.com:9443/ws/btcusdt@depth@100ms
 Stream: btcusdt@depth20@100ms
 Connected! Listening for messages...
-Average depth update took 3.92 microseconds
+Average depth update took 0.14851485 microseconds
 [ 1] [ 0.15420 ] 43250.540 | 43251.110 [ 0.23450 ]
 [ 2] [ 0.28350 ] 43250.250 | 43251.250 [ 0.34560 ]
 [ 3] [ 0.45720 ] 43250.000 | 43251.500 [ 0.12890 ]
@@ -95,6 +95,6 @@ Average depth update took 3.92 microseconds
 -------------------------------------------------------------
 ```
 
-The live stream demonstrates real-world performance handling thousands of Binance market data updates with zero heap allocation and microsecond processing latency.
+The live stream demonstrates real-world performance handling thousands of Binance market data updates with zero heap allocation and sub micro-second processing latency.
 
 ---
