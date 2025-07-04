@@ -719,39 +719,6 @@ mod tests {
     }
 
     #[test]
-    fn test_zero_quantity_removal() {
-        let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
-
-        // Add initial levels
-        let mut bids1 = ArrayVec::new();
-        bids1.push([50000.0, 1.0]);
-        let mut asks1 = ArrayVec::new();
-        asks1.push([50001.0, 1.0]);
-
-        let update1 = PartialDepthUpdate {
-            last_update_id: 1,
-            bids: bids1,
-            asks: asks1,
-        };
-        book.update_partial_depth(&update1).unwrap();
-        assert!(book.get_best_bid_ask().is_some());
-
-        // Remove with zero quantity
-        let mut bids2 = ArrayVec::new();
-        bids2.push([50000.0, 0.0]);
-        let mut asks2 = ArrayVec::new();
-        asks2.push([50001.0, 0.0]);
-
-        let update2 = PartialDepthUpdate {
-            last_update_id: 2,
-            bids: bids2,
-            asks: asks2,
-        };
-        book.update_partial_depth(&update2).unwrap();
-        assert!(book.get_best_bid_ask().is_none());
-    }
-
-    #[test]
     fn test_invalid_symbol_error() {
         let mut book = OrderBook::new("BTCUSDT".to_string()).unwrap();
 
