@@ -77,7 +77,7 @@ Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial  or full
 - **Shows real-time market data** with live price movements
 - **Demonstrates production-ready WebSocket handling** with heartbeat and error recovery
 - **Is capable of processing thousands of updates per second** ( laptop measured latency on average 4 - 5 microseconds )
-- **To run partial depth stream, pass the argument partial to cargo run .. cargo run -- partial. For full depth run it as cargo run --full**
+- **To run partial depth stream, pass the argument partial to cargo run:  cargo run -- partial. For full depth: cargo run --full**
 
 Expected output:
 ```
@@ -94,6 +94,6 @@ Average depth update took 3.92 microseconds
 -------------------------------------------------------------
 ```
 
-The live stream demonstrates real-world performance handling thousands of Binance market data updates with zero heap allocation and sub-microsecond processing latency.
+The live stream demonstrates real-world performance handling thousands of Binance market data updates with zero heap allocation and microsecond processing latency.
 
 ---
