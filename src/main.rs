@@ -143,7 +143,7 @@ impl BinanceSingleStreamClient {
                             println!("WebSocket stream ended");
                             break;
                         },
-                        _ => {} // Handle other message types
+                        _ => {}
                     }
                 },
                 // Send periodic ping
@@ -162,7 +162,15 @@ impl BinanceSingleStreamClient {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    run_full_depth_stream().await?;
+    let args: Vec<String> = std::env::args().collect();
+    if args[1].as_str() == "full" {
+        run_full_depth_stream().await?;
+    } else if args[1].as_str() == "partial" {
+        run_partial_depth_stream().await?;
+    } else {
+        println!("Passed wrong argument to command line!");
+    }
+
     Ok(())
 }
 

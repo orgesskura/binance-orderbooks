@@ -71,13 +71,13 @@ test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
 ```bash
 cargo run
 ```
-Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial book depth stream** that:
+Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial  or full book depth stream** that:
 - **Connects to real Binance WebSocket** (`wss://stream.binance.com:9443`)
-- **Processes depth20@100ms stream** (20 levels, 100ms updates)
 - **Prints top 20 best bids/asks every 10 seconds** in formatted table
 - **Shows real-time market data** with live price movements
 - **Demonstrates production-ready WebSocket handling** with heartbeat and error recovery
-- **Is capable of processing thousands of updates per second** ( laptop measured latency on average 5 microseconds )
+- **Is capable of processing thousands of updates per second** ( laptop measured latency on average 4 - 5 microseconds )
+- **To run partial depth stream, pass the argument partial to cargo run .. cargo run -- partial. For full depth run it as cargo run --full**
 
 Expected output:
 ```

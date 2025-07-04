@@ -24,7 +24,7 @@ In cryptocurrency trading, particularly in high-frequency trading (HFT) and mark
 - **Input validation**: Reject invalid data that could corrupt the orderbook state
 
 #### 3. **Real-Time Stream Processing**
-The implementation must handle two distinct Binance WebSocket data streams:
+The implementation must handle a few distinct Binance WebSocket data streams:
 
 **Individual Symbol Book Ticker Stream**
 ```json
@@ -50,6 +50,32 @@ The implementation must handle two distinct Binance WebSocket data streams:
 }
 ```
 - Provides **full orderbook depth** (20 price levels on each side)
+- Complete market structure visibility
+- Essential for market making and large order placement
+
+**Diff Book Depth Stream**
+```json
+{
+  "e": "depthUpdate", // Event type
+  "E": 1672515782136, // Event time
+  "s": "BNBBTC",      // Symbol
+  "U": 157,           // First update ID in event
+  "u": 160,           // Final update ID in event
+  "b": [              // Bids to be updated
+    [
+      "0.0024",       // Price level to be updated
+      "10"            // Quantity
+    ]
+  ],
+  "a": [              // Asks to be updated
+    [
+      "0.0026",       // Price level to be updated
+      "100"           // Quantity
+    ]
+  ]
+}
+```
+- Provides **orderbooks that have changed**
 - Complete market structure visibility
 - Essential for market making and large order placement
 

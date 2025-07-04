@@ -212,7 +212,7 @@ pub struct DepthUpdate {
     pub last_update_id: u64,
     #[serde(rename = "b", deserialize_with = "deserialize_vec_to_f64")]
     pub bids: Vec<[f64; 2]>,
-    #[serde(rename = "a",deserialize_with = "deserialize_vec_to_f64")]
+    #[serde(rename = "a", deserialize_with = "deserialize_vec_to_f64")]
     pub asks: Vec<[f64; 2]>,
 }
 
@@ -350,7 +350,7 @@ impl OrderBook {
 
     #[inline]
     pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
-        if data.last_update_id < self.last_update_id{
+        if data.last_update_id < self.last_update_id {
             return Ok(());
         }
         // Process bid updates
