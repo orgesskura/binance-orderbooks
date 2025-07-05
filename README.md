@@ -76,17 +76,17 @@ Connects to **Binance WebSocket API** and runs a live **BTCUSDT partial  or full
 - **Prints top 20 best bids/asks every 10 seconds** in formatted table
 - **Shows real-time market data** with live price movements
 - **Demonstrates production-ready WebSocket handling** with heartbeat and error recovery
-- **Is capable of processing thousands of updates per second** ( laptop measured latency on average 4 - 5 microseconds )
+- **Is capable of processing thousands of updates per second** ( laptop measured average sub micro-second latency )
 - **Run with release flag to optimize performance**
 - **To run partial depth stream, pass the argument partial to cargo run:  cargo run --release -- partial. For full depth: cargo run --release --full**
 
 Expected output:
 ```
-Connecting to BTCUSDT partial book depth stream...
-Connecting to: wss://stream.binance.com:9443/ws/btcusdt@depth20@100ms
+Connecting to BTCUSDT book depth stream...
+Connecting to: wss://stream.binance.com:9443/ws/btcusdt@depth@100ms
 Stream: btcusdt@depth20@100ms
 Connected! Listening for messages...
-Average depth update took 3.92 microseconds
+Average depth update took 0.14851485 microseconds
 [ 1] [ 0.15420 ] 43250.540 | 43251.110 [ 0.23450 ]
 [ 2] [ 0.28350 ] 43250.250 | 43251.250 [ 0.34560 ]
 [ 3] [ 0.45720 ] 43250.000 | 43251.500 [ 0.12890 ]
@@ -95,6 +95,6 @@ Average depth update took 3.92 microseconds
 -------------------------------------------------------------
 ```
 
-The live stream demonstrates real-world performance handling thousands of Binance market data updates with zero heap allocation and microsecond processing latency.
+The live stream demonstrates real-world performance handling thousands of Binance market data updates with zero heap allocation and sub micro-second processing latency.
 
 ---
