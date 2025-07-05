@@ -179,6 +179,7 @@ async fn run_partial_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
     let mut last_print = Instant::now();
     let mut total_depth_time = 0;
     let mut num_executions = 0;
+    let mut total_parsing_time = 0;
 
     let client = BinanceSingleStreamClient::new();
     let mut orderbook = OrderBook::new("BTCUSDT".to_string()).unwrap();
@@ -189,7 +190,10 @@ async fn run_partial_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
             Some(DepthLevel::Twenty),
             UpdateSpeed::Fast, // 100ms updates
             move |message| {
+                let start = Instant::now();
                 let depth_update = PartialDepthUpdate::from_json(&message).unwrap();
+                let elapsed_time = (Instant::now() - start).as_micros();
+                total_parsing_time += elapsed_time;
                 let start = Instant::now();
                 let _ = orderbook.update_partial_depth(&depth_update);
                 let elapsed_time = (Instant::now() - start).as_micros();
@@ -197,11 +201,14 @@ async fn run_partial_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
                 num_executions += 1;
                 if last_print.elapsed().as_secs() >= 10 {
                     let average_execution = total_depth_time as f32 / num_executions as f32;
+                    let average_parse = total_parsing_time as f32 / num_executions as f32;
+                    println!("Average parse took {average_parse} microseconds");
                     println!("Average depth update took {average_execution} microseconds");
                     println!("{}", orderbook.to_string());
                     println!("-------------------------------------------------------------");
                     last_print = Instant::now();
                     total_depth_time = 0;
+                    total_parsing_time = 0;
                     num_executions = 0;
                 }
             },
