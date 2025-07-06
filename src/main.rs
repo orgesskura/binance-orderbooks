@@ -196,14 +196,14 @@ async fn run_partial_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
                 total_parsing_time += elapsed_time;
                 let start = Instant::now();
                 let _ = orderbook.update_partial_depth(&depth_update);
-                let elapsed_time = (Instant::now() - start).as_micros();
+                let elapsed_time = (Instant::now() - start).as_nanos();
                 total_depth_time += elapsed_time;
                 num_executions += 1;
                 if last_print.elapsed().as_secs() >= 10 {
                     let average_execution = total_depth_time as f32 / num_executions as f32;
                     let average_parse = total_parsing_time as f32 / num_executions as f32;
                     println!("Average parse took {average_parse} microseconds");
-                    println!("Average depth update took {average_execution} microseconds");
+                    println!("Average depth update took {average_execution} nanoseconds");
                     println!("{}", orderbook.to_string());
                     println!("-------------------------------------------------------------");
                     last_print = Instant::now();
@@ -240,14 +240,14 @@ async fn run_full_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
                 total_parse_time += elapsed_time;
                 let start = Instant::now();
                 let _ = orderbook.update_depth(&depth_update);
-                let elapsed_time = (Instant::now() - start).as_micros();
+                let elapsed_time = (Instant::now() - start).as_nanos();
                 total_depth_time += elapsed_time;
                 num_executions += 1;
                 if last_print.elapsed().as_secs() >= 10 {
                     let average_parse = total_parse_time as f32 / num_executions as f32;
                     let average_execution = total_depth_time as f32 / num_executions as f32;
                     println!("Average parse took {average_parse} microseconds");
-                    println!("Average depth update took {average_execution} microseconds");
+                    println!("Average depth update took {average_execution} nanoseconds");
                     println!("{}", orderbook.to_string());
                     println!("-------------------------------------------------------------");
                     last_print = Instant::now();
