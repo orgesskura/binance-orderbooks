@@ -1,5 +1,7 @@
 use arrayvec::ArrayVec;
+use ordered_float::OrderedFloat;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt;
 
 // I am using [inline] on functions that are called a lot. That is to improve performance by eliminating function call overhead.
@@ -208,6 +210,8 @@ impl PartialDepthUpdate {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct DepthUpdate {
+    #[serde(rename = "s")]
+    pub symbol: String,
     #[serde(rename = "u")]
     pub last_update_id: u64,
     #[serde(rename = "b", deserialize_with = "deserialize_vec_to_f64")]
@@ -340,47 +344,6 @@ impl OrderBook {
             } else {
                 return Err(OrderBookError::InvalidQuantity(
                     "Quantity needs to be greater than 0".to_string(),
-                ));
-            }
-        }
-
-        self.last_update_id = data.last_update_id;
-        Ok(())
-    }
-
-    #[inline]
-    pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
-        if data.last_update_id < self.last_update_id {
-            return Ok(());
-        }
-        // Process bid updates
-        for bid_data in &data.bids {
-            let price = validate_price(bid_data[0])?;
-            let qty = bid_data[1];
-
-            if qty == 0.0 {
-                self.remove_bid(price);
-            } else if qty > 0.0 {
-                self.update_or_insert_bid(price, qty);
-            } else {
-                return Err(OrderBookError::InvalidQuantity(
-                    "Quantity cannot be negative".to_string(),
-                ));
-            }
-        }
-
-        // Process ask updates
-        for ask_data in &data.asks {
-            let price = validate_price(ask_data[0])?;
-            let qty = ask_data[1];
-
-            if qty == 0.0 {
-                self.remove_ask(price);
-            } else if qty > 0.0 {
-                self.update_or_insert_ask(price, qty);
-            } else {
-                return Err(OrderBookError::InvalidQuantity(
-                    "Quantity cannot be negative".to_string(),
                 ));
             }
         }
@@ -545,6 +508,132 @@ impl OrderBook {
     #[inline]
     pub fn last_update_id(&self) -> u64 {
         self.last_update_id
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FullDepthOrderBook {
+    pub symbol: String,
+    pub bids: BTreeMap<OrderedFloat<Price>, Quantity>,
+    pub asks: BTreeMap<OrderedFloat<Price>, Quantity>,
+    last_update_id: u64,
+}
+
+impl FullDepthOrderBook {
+    pub fn new(symbol: String) -> Result<FullDepthOrderBook, OrderBookError> {
+        if symbol.is_empty() {
+            return Err(OrderBookError::InvalidSymbol(
+                "Symbol cannot be empty".to_string(),
+            ));
+        }
+
+        Ok(FullDepthOrderBook {
+            symbol,
+            bids: BTreeMap::new(),
+            asks: BTreeMap::new(),
+            last_update_id: 0,
+        })
+    }
+
+    #[inline]
+    pub fn update_depth(&mut self, data: &DepthUpdate) -> Result<(), OrderBookError> {
+        if data.last_update_id < self.last_update_id || self.symbol != data.symbol {
+            return Ok(());
+        }
+        // Process bid updates
+        for bid_data in &data.bids {
+            let price = OrderedFloat(validate_price(bid_data[0])?);
+            let qty = bid_data[1];
+
+            if qty == 0.0 {
+                self.bids.remove(&price);
+            } else if qty > 0.0 {
+                self.bids.insert(price, qty);
+            } else {
+                return Err(OrderBookError::InvalidQuantity(
+                    "Quantity cannot be negative".to_string(),
+                ));
+            }
+        }
+
+        // Process ask updates
+        for ask_data in &data.asks {
+            let price = OrderedFloat(validate_price(ask_data[0])?);
+            let qty = ask_data[1];
+
+            if qty == 0.0 {
+                self.asks.remove(&price);
+            } else if qty > 0.0 {
+                self.asks.insert(price, qty);
+            } else {
+                return Err(OrderBookError::InvalidQuantity(
+                    "Quantity cannot be negative".to_string(),
+                ));
+            }
+        }
+
+        self.last_update_id = data.last_update_id;
+        Ok(())
+    }
+
+    #[inline]
+    pub fn get_levels(
+        &self,
+        depth: usize,
+    ) -> (
+        ArrayVec<(&OrderedFloat<Price>, &f64), 20>,
+        ArrayVec<(&OrderedFloat<Price>, &f64), 20>,
+    ) {
+        let bid_depth = depth.min(self.bids.len()).min(20);
+        let ask_depth = depth.min(self.asks.len()).min(20);
+
+        let mut bids = ArrayVec::new();
+        let mut asks = ArrayVec::new();
+
+        // Fill bids array (no heap allocation)
+        for level in self.bids.iter().rev().take(bid_depth) {
+            bids.push((level.0, level.1));
+        }
+
+        // Fill asks array (no heap allocation)
+        for level in self.asks.iter().take(ask_depth) {
+            asks.push((level.0, level.1));
+        }
+
+        (bids, asks)
+    }
+
+    // Optimized string formatting with minimal allocation
+    pub fn to_string(&self) -> String {
+        let (bids, asks) = self.get_levels(20);
+
+        // Pre-calculate string capacity to avoid reallocation
+        let estimated_size = bids.len().max(asks.len()) * 64;
+        let mut result = String::with_capacity(estimated_size);
+
+        let max_levels = bids.len().max(asks.len());
+
+        for i in 0..max_levels {
+            result.push_str(&format!("[{:2}] ", i + 1));
+
+            if i < bids.len() {
+                result.push_str(&format!("[ {:.5} ] {:>9.3}", bids[i].1, bids[i].0));
+            } else {
+                result.push_str(&format!("[ {:>7} ] {:>9}", "", ""));
+            }
+
+            result.push_str(" | ");
+
+            if i < asks.len() {
+                result.push_str(&format!("{:>9.3} [ {:.5} ]", asks[i].0, asks[i].1));
+            } else {
+                result.push_str(&format!("{:>9} [ {:>7} ]", "", ""));
+            }
+
+            result.push('\n');
+        }
+
+        result
     }
 }
 

@@ -1,5 +1,5 @@
 mod orderbooks;
-use crate::orderbooks::{DepthUpdate, OrderBook, PartialDepthUpdate};
+use crate::orderbooks::{DepthUpdate, FullDepthOrderBook, OrderBook, PartialDepthUpdate};
 use futures_util::{SinkExt, StreamExt};
 use std::time::Duration;
 use std::time::Instant;
@@ -226,7 +226,7 @@ async fn run_full_depth_stream() -> Result<(), Box<dyn std::error::Error>> {
     let mut total_parse_time = 0;
 
     let client = BinanceSingleStreamClient::new();
-    let mut orderbook = OrderBook::new("BTCUSDT".to_string()).unwrap();
+    let mut orderbook = FullDepthOrderBook::new("BTCUSDT".to_string()).unwrap();
 
     client
         .connect(

@@ -12,3 +12,4 @@ tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
 futures-util = "0.3"
 url = "2.4"
 fast-float = "0.2"
+ordered-float = "5.0"
